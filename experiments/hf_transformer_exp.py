@@ -182,7 +182,7 @@ def main():
             all_rows.extend(rows)
             df_m = pd.DataFrame(rows)
             print(f"[fold {fold} seed {seed}] hf_transformer mase={df_m.mase.mean():.3f} "
-                  f"smape={df_m.smape.mean():.4f}", flush=True)
+                  f"diracc_h30={df_m.diracc_h30.mean():.3f}", flush=True)
 
     out_path = Path(__file__).parent / "results" / (
         "raw_hf_smoke.csv" if args.smoke else "raw_hf.csv")

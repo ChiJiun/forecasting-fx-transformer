@@ -5,7 +5,7 @@
 目前 repo 同時保留：
 
 1. **早期模型實驗**：Transformer、Informer、Autoformer、PatchTST 等原始訓練程式與輸出。
-2. **最終嚴謹評估框架**：位於 `experiments/`，修正早期實驗中的資料洩漏與評估設計問題，加入 rolling-origin backtest、統計檢定與超參數敏感度分析。
+2. **最終嚴謹評估框架**：位於 `experiments/`，修正早期實驗中的資料洩漏與評估設計問題，加入 rolling-origin backtest、統計檢定、超參數敏感度分析與經濟價值回測。
 
 > 若要了解本專案的最終研究結論，請以 `experiments/` 的結果為主，而不是早期單一測試視窗的模型輸出。
 
@@ -23,8 +23,8 @@ NSTC 113-2813-C-008-073-E
 
 - 經濟理論變數是否提供可用的匯率資訊；
 - Transformer 類模型是否能穩健優於 Random Walk；
-- 同一模型在不同貨幣、不同時間頻率、跨貨幣資訊下的點位預測表現；
-- 預測改善是否具備統計顯著性。
+- 匯率的 **point forecast** 與 **direction forecast** 是否呈現不同的可預測性；
+- 預測訊號是否具備統計與經濟意義。
 
 ---
 
@@ -49,8 +49,10 @@ experiments/
 | Neural seeds | 3 |
 | Validation | 測試區間前 250 天 |
 | Leakage control | train/validation target 與 test 之間保留 30 天 embargo |
-| Point metrics | MASE、sMAPE、MAE、MSE、h=1/5/14/30 absolute error |
-| Statistical tests | Diebold-Mariano（HAC + HLN 修正） |
+| Point metrics | MASE、sMAPE、MAE、MSE |
+| Direction metrics | h=1/5/14/30 directional accuracy |
+| Statistical tests | Diebold-Mariano、Pesaran-Timmermann |
+| Economic evaluation | 5-day direction strategy、Sharpe、transaction cost adjustment |
 
 所有最終模型只使用**預測起點當下可取得的資訊**，避免把未來 FFX / interest rate 誤送入 future covariates。
 
@@ -134,6 +136,38 @@ Repo 根目錄另外保留較早期的：
 
 ---
 
+### 2. Direction Forecast: theory features contain useful information
+
+`Ridge + theory features`：
+
+- 5-day directional accuracy：**56.12%**
+- Pesaran-Timmermann p-value (h=5)：約 **0.00002**
+- h=30 同樣具有顯著方向可預測性
+
+重要的是，同架構移除 theory features 後，方向預測顯著性大幅下降。
+
+目前最主要的研究發現是：
+
+> **經濟理論特徵對匯率 point forecast 的改善有限，但對方向預測具有明顯資訊含量。**
+
+---
+
+### 3. Economic Value
+
+以 Ridge + theory features 的 5-day direction signal 建立等權貨幣策略：
+
+| Metric | Result |
+|---|---:|
+| Annualized return | **8.9%** |
+| Annualized volatility | 3.8% |
+| Sharpe ratio | **2.33** |
+| Lo Sharpe t-statistic | **3.26** |
+| Net Sharpe after 2 bp one-way cost | **2.16** |
+
+此結果表示方向訊號具有潛在經濟價值，但仍應搭配下方的研究限制解讀。
+
+---
+
 ## Why the Final Framework Is Different from the Early Experiments
 
 研究後期重新檢查早期程式與結果後，發現數個會影響結論的重要問題：
@@ -166,6 +200,9 @@ Repo 根目錄另外保留較早期的：
 - neural models multi-seed evaluation；
 - Ridge 超參數 sensitivity grid；
 - Diebold-Mariano test vs Random Walk；
+- Pesaran-Timmermann directional predictability test；
+- 5-day economic-value backtest；
+- 交易成本調整；
 - 額外 Random Walk challenge：
   - shrinkage forecast combination
   - forward-premium bias
@@ -196,7 +233,7 @@ Repo 根目錄另外保留較早期的：
     ├── fxlib/
     │   ├── data.py                  # leakage-free data / features
     │   ├── models.py                # 統一模型介面
-    │   └── backtest.py              # metrics / DM test
+    │   └── backtest.py              # metrics / DM / PT / economic value
     ├── run_experiments.py           # 主 rolling-origin 實驗
     ├── sklearn_exp.py               # Random Forest / MLP
     ├── hf_transformer_exp.py        # HF Transformer 無洩漏重測
@@ -212,6 +249,7 @@ Repo 根目錄另外保留較早期的：
         ├── full_project_report.md
         ├── report.md
         ├── summary.csv
+        ├── economic_value.csv
         └── ...
 ```
 
@@ -219,14 +257,14 @@ Repo 根目錄另外保留較早期的：
 
 ## Extension Experiments (2026-10) — 請先讀這一節
 
-`experiments/ext_*.py` 與 `experiments/results_ext/` 為後續延伸實驗，只看點位誤差，探討三個問題：同一模型在不同匯率是否一致（全域 / 區域 / 留一貨幣訓練、轉移矩陣）、多頻率（日/週/月）整合、同時間其他匯率的資訊（跨貨幣 Ridge、iTransformer、跨貨幣 PatchTST）。
+`experiments/ext_*.py` 與 `experiments/results_ext/` 為後續延伸實驗，暫緩方向預測、只看點位誤差，探討三個問題：同一模型在不同匯率是否一致（全域 / 區域 / 留一貨幣訓練、轉移矩陣）、多頻率（日/週/月）整合、同時間其他匯率的資訊（跨貨幣 Ridge、iTransformer、跨貨幣 PatchTST）。
 
 **重要：延伸實驗發現兩個會影響上方 Final Results 的問題**（詳見 [`experiments/docs/extension_report.md`](experiments/docs/extension_report.md) §0）：
 
-1. **遠期匯率時間戳洩漏**。AUD、CAD、DKK、JPY、NOK、CHF、GBP 七個貨幣的 FFX（RFV 來源）取價時間晚於 WM/R 即期定盤，`fwd_premium` 因此含有次日即期報酬的資訊（與次日報酬相關 0.43–0.51）。這對點位 MASE 影響很小（Ridge + 理論特徵與無特徵版差距 <0.5%），但使用 `fwd_premium` 的任何結果都應以 `ext_leak_check.py` 的 `feat_lag1` 版本為準。
+1. **遠期匯率時間戳洩漏**。AUD、CAD、DKK、JPY、NOK、CHF、GBP 七個貨幣的 FFX（RFV 來源）取價時間晚於 WM/R 即期定盤，`fwd_premium` 因此含有次日即期報酬的資訊（與次日報酬相關 0.43–0.51）。上方「理論特徵有方向資訊、Sharpe 2.33」的結果集中在這七個貨幣；把 `fwd_premium` 延後一天或移除後，方向準確率回到 48–49%、PT 檢定不顯著。**該結論在修正資料對齊並重跑前不應引用。**
 2. **合併 DM 檢定以 level 單位 MAE 計算**，KRW 佔合併 MAE 的 86%。尺度無關（MASE）版本見 `experiments/results_ext/existing_vs_rw_scalefree.csv`；「無模型顯著優於 Random Walk」的結論不變。
 
-延伸實驗本身的結論：三個問題都**沒有**產生穩健優於 Random Walk 的點位預測；唯一的跨貨幣效果只在 KRW/TWD（定盤時間落後 G10 所致），其餘貨幣為零。各模型適合的資料類型、優缺點與架構解釋見 [`experiments/docs/model_comparison.md`](experiments/docs/model_comparison.md)。
+延伸實驗本身的結論：三個方向都**沒有**產生穩健優於 Random Walk 的點位預測；唯一的跨貨幣效果只在 KRW/TWD（定盤時間落後 G10 所致），其餘貨幣為零。各模型適合的資料類型、優缺點與架構解釋見 [`experiments/docs/model_comparison.md`](experiments/docs/model_comparison.md)。
 
 ```powershell
 .\.venv\Scripts\python.exe experiments\ext_analysis_existing.py   # 既有結果的跨貨幣一致性分析
@@ -317,15 +355,17 @@ Smoke test 涵蓋：
 
 目前結果仍有以下限制：
 
-- 主表的 DM 檢定以 level MAE 合併，高價位貨幣（KRW）權重過大；尺度無關版本見 `experiments/results_ext/existing_vs_rw_scalefree.csv`。
-- 7 個貨幣的遠期匯率有時間戳洩漏（見上方 Extension Experiments）。
+- 經濟價值回測以固定 **2 bp one-way transaction cost** 近似，未完整納入滑價與 carry。
+- 主要 economic-value period 為約兩年的 104 個不重疊 5-day holding periods。
+- Pesaran-Timmermann test 將跨貨幣觀測近似視為獨立，但實際上同日貨幣報酬存在 cross-sectional correlation，因此極小 p-value 應保守解讀。
 - Chronos 的預訓練資料可能包含部分金融時間序列，因此 zero-shot 結果僅作 baseline。
-- 本研究結果不支持「穩健的 point-forecast superiority」。
+- 本研究結果支持「directional information」而非「穩健的 point-forecast superiority」。
 
 若進一步投稿，可優先考慮：
 
 - 延長至更多市場週期；
 - 使用 cluster-aware / block-bootstrap inference；
+- 將 carry 與更完整交易成本納入 economic evaluation；
 - 依真正資料發布時點加入月頻 PPP / Taylor-rule 等 macro features。
 
 ---

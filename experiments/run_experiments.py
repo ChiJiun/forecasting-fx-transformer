@@ -74,7 +74,7 @@ def main():
                 df_m = pd.DataFrame(rows)
                 print(f"[fold {fold} seed {seed}] {model.name:22s} "
                       f"mase={df_m.mase.mean():.3f} smape={df_m.smape.mean():.4f} "
-                      f"abserr_h30={df_m.abserr_h30.mean():.3f} "
+                      f"diracc_h30={df_m.diracc_h30.mean():.3f} "
                       f"({time.time()-t0:.0f}s)", flush=True)
 
     out = Path(args.out)

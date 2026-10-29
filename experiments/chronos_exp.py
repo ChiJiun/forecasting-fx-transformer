@@ -62,7 +62,7 @@ def main():
         all_rows.extend(rows)
         df_m = pd.DataFrame(rows)
         print(f"[fold {fold}] chronos_bolt mase={df_m.mase.mean():.3f} "
-              f"smape={df_m.smape.mean():.4f} abserr_h30={df_m.abserr_h30.mean():.3f} "
+              f"smape={df_m.smape.mean():.4f} diracc_h30={df_m.diracc_h30.mean():.3f} "
               f"({time.time()-t0:.0f}s)", flush=True)
 
     out_path = Path(__file__).parent / "results" / (

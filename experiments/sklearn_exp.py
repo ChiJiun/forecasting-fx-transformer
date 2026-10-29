@@ -112,7 +112,7 @@ def main():
                 all_rows.extend(rows)
                 df_m = pd.DataFrame(rows)
                 print(f"[fold {fold} seed {seed}] {model.name:20s} "
-                      f"mase={df_m.mase.mean():.3f} smape={df_m.smape.mean():.4f} "
+                      f"mase={df_m.mase.mean():.3f} diracc_h5={df_m.diracc_h5.mean():.3f} "
                       f"({time.time()-t0:.0f}s)", flush=True)
 
     out = Path(__file__).parent / "results" / (

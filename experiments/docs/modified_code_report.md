@@ -19,7 +19,7 @@ experiments/
 ├── fxlib/                      # 共用函式庫
 │   ├── data.py                 # 資料載入、歐元去重、理論特徵、視窗切割
 │   ├── models.py               # 模型動物園 + 共用訓練器
-│   └── backtest.py             # 指標、DM 檢定
+│   └── backtest.py             # 指標、DM/PT 檢定、經濟價值回測
 ├── run_experiments.py          # 主實驗矩陣
 ├── hf_transformer_exp.py       # 原報告模型無洩漏重測
 ├── chronos_exp.py              # Chronos-Bolt 零樣本
@@ -64,10 +64,12 @@ experiments/
 
 ### 3.3 backtest.py
 
-- `metric_rows()`：每 (nation, origin) 一列——MAE/MSE/sMAPE/MASE 與各視野絕對誤差 `abserr_h*`（h ∈ {1,5,14,30}）。
+- `metric_rows()`：每 (nation, origin) 一列——MAE/MSE/sMAPE/MASE、方向準確率與帶號累積報酬 `pred_cret_h*`/`true_cret_h*`（h ∈ {1,5,14,30}）。
 - `mase_scales()`：MASE 分母 = 訓練期 naive 一步 MAE（每貨幣）。
 - `dm_test(a, b, max_lag)`：Diebold-Mariano，Bartlett-kernel HAC 變異數（處理重疊視窗自相關）+ Harvey-Leybourne-Newbold 小樣本修正；樣本過少時 lag 自動縮減（`min(max_lag, T//4)`）。
-- `summarize()`：多 seed 平均 → 模型層級總表（含 DM p 值）。
+- `pt_test()`：Pesaran-Timmermann (1992) 方向可預測性檢定（考慮方向邊際機率，比裸方向準確率嚴格——例如永遠猜同方向的模型在 PT 下不顯著）。
+- `economic_value(df, h=5, cost_oneway=2bp)`：每 5 日依預測方向持有（不重疊）、等權跨幣別組合；輸出年化報酬/波動/Sharpe、Lo (2002) 標準誤 t 值、扣部位變動成本後淨 Sharpe。
+- `summarize()`：多 seed 平均 → 模型層級總表（含 DM 與 PT p 值）。
 
 ## 4. 實驗腳本詳解
 
@@ -109,7 +111,7 @@ RandomForestRegressor（n_estimators=100，同原報告預設）與 MLPRegressor
 
 6 個年度 fold（2018-03 ~ 2024-02），`--stride` 可調（5 → 312 起點；2 → 780 起點）。候選（皆驗證集選參）：
 - `shrunk_ridge`：λ·Ridge+feat + (1−λ)·RW，λ ∈ {0.1..1.0}
-- `fwd_bias`：s + γ(h/30)(F−s)，γ ∈ {−2..2}（γ<0 = Fama 遠期溢價偏誤）
+- `fwd_bias`：s + γ(h/30)(F−s)，γ ∈ {−2..2}（γ<0 = Fama 遠期溢價偏誤方向）
 - `RidgeRich`：再加自身 5/20/60 日動能與**美元因子**（同起點跨幣別平均動能，利用視窗 [origin×nation] 排序 reshape 取均值）
 - `combo`：shrunk 版本等權平均
 
@@ -117,7 +119,7 @@ DM 檢定分整段路徑 / h=1 / h=5 / h=30，HAC lag 隨 stride 調整（`max(6
 
 ### 4.7 make_report.py（彙整）
 
-合併 `raw.csv + raw_hf + raw_chronos + raw_tuned + raw_sklearn` → `summarize()` 總表、跨 fold MASE、敏感度網格（MASE）→ 產出兩張圖（MASE 橫條、誤差-視野曲線；Microsoft JhengHei 中文字型、依 dataviz 規範的色票與樣式）→ 寫 `report.md`。
+合併 `raw.csv + raw_hf + raw_chronos + raw_tuned + raw_sklearn` → `summarize()` 總表、跨 fold MASE、經濟價值表、敏感度網格 → 產出三張圖（MASE 橫條、誤差-視野曲線、方向準確率曲線；Microsoft JhengHei 中文字型、依 dataviz 規範的色票與樣式）→ 寫 `report.md`。
 
 ## 5. 資料流總覽
 
@@ -155,7 +157,7 @@ nations/*.csv
 | 未來共變數 | 洩漏（feat_dynamic_real 進未來視窗） | 全部只用起點當下已知資訊 |
 | 驗證集 | 與訓練重疊、未用於選模 | 獨立區間 + embargo、early stopping + 選 checkpoint |
 | 歐元區 | 7 國重複計算 | 合併為單一序列 |
-| 檢定 | 無 | DM（HAC+HLN） |
+| 檢定 | 無 | DM（HAC+HLN）、PT、Lo Sharpe SE |
 | 隨機性 | 無 seed、單次 | 固定 seeds × 3、平均 |
 | 選參 | 無 | 驗證集 grid search + 測試集敏感度分析 |
 | 程式重複 | 4×660 行近複製 | 共用 fxlib，模型以類別註冊 |

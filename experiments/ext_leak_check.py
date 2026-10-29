@@ -5,7 +5,8 @@
   feat_orig   : 原特徵（含可能洩漏的 fwd_premium_t）
   feat_nofp   : 拿掉 fwd_premium，只留 rate_diff 與 rate_diff_chg5
   feat_lag1   : 全部理論特徵改用 t-1 的值（保守：任何 t 當日定盤時間差都被排除）
-評估：點位（MASE 比、h=1 比、DM），分「洩漏 7 貨幣」與「乾淨 4 貨幣」兩組。設定與 run_experiments.py 相同。
+評估：點位（MASE 比、h=1 比、DM）＋ 為了對照既有結論也列出方向準確率與 PT p
+（分「洩漏 7 貨幣」與「乾淨 4 貨幣」兩組）。設定與 run_experiments.py 相同。
 用法：python experiments/ext_leak_check.py
 """
 import sys
@@ -18,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from fxlib.data import load_panel, make_windows
 from fxlib.models import NaiveRW, RidgeReturns
 from fxlib.multi import RidgeStd, fold_origins, vs_rw_table, add_scaled_errors
-from fxlib.backtest import metric_rows, mase_scales, dm_test
+from fxlib.backtest import metric_rows, mase_scales, pt_test, dm_test
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path(__file__).parent / "results_ext"
@@ -97,6 +98,8 @@ def main():
             a = gg.groupby("origin")["mase"].mean().sort_index()
             b = bb.groupby("origin")["mase"].mean().sort_index()
             row[f"mase_ratio_{grp}"] = a.mean() / b.mean()
+            row[f"diracc_h5_{grp}"] = gg["diracc_h5"].mean()
+            row[f"pt_p_h5_{grp}"] = pt_test(gg["pred_cret_h5"], gg["true_cret_h5"])[1]
         out.append(row)
     grp_tab = pd.DataFrame(out)
     grp_tab.to_csv(OUT / "leak_check_groups.csv", index=False)
