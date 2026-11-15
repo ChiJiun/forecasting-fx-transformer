@@ -1,0 +1,47 @@
+{
+  "horizons": [
+    1,
+    3,
+    6,
+    12,
+    24
+  ],
+  "main_origin_start": "2000-01",
+  "ppp_long_origin_start": "1995-01",
+  "subperiod_cut": "2012-01",
+  "release_lag": {
+    "cpi": 2,
+    "cpi_australia": 4,
+    "rate": 1
+  },
+  "min_train": 60,
+  "models": [
+    "rw",
+    "drift",
+    "ppp_each",
+    "ppp_panel",
+    "ppp_calib_hl36",
+    "ppp_calib_hl36_noinfl",
+    "ppp_calib_hl60",
+    "uip_theory",
+    "uip_each",
+    "taylor_each",
+    "taylor_panel",
+    "ppp_taylor_panel",
+    "combo"
+  ],
+  "currencies": [
+    "australia",
+    "canada",
+    "denmark",
+    "eurozone",
+    "japan",
+    "south_korea",
+    "norway",
+    "sweden",
+    "switzerland",
+    "taiwan",
+    "uk"
+  ],
+  "last_month": "2023-10"
+}
