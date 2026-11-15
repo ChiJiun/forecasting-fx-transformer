@@ -2,7 +2,7 @@
 
 - 多個預測起點（stride 抽樣），每起點預測 H 天路徑
 - MASE / sMAPE / MAE / MSE，以及 h=1,5,14,30 各視野的絕對誤差
-- Diebold-Mariano 檢定（HAC 變異數，起點重疊時仍有效）
+- Diebold-Mariano 檢定（HAC 變異數，起點重疊時仍有效；以 MASE 為損失，跨貨幣尺度無關）
 """
 import numpy as np
 import pandas as pd
@@ -69,8 +69,9 @@ def summarize(df, baseline="random_walk"):
     # 對神經模型多 seed 先取平均（同 nation/origin）
     per_no = (df.groupby(["model", "nation", "origin"], as_index=False)
                 .mean(numeric_only=True).drop(columns="seed"))
-    base = (per_no[per_no.model == baseline]
-            .groupby("origin")["mae"].mean().sort_index())
+    base_by_origin = (per_no[per_no.model == baseline]
+                      .groupby("origin")[["mase", "mae"]].mean().sort_index())
+    base_mase = base_by_origin["mase"].mean()
 
     out = []
     for model, g in per_no.groupby("model"):
@@ -83,10 +84,16 @@ def summarize(df, baseline="random_walk"):
         # MASE 的起點間標準差（跨國平均後）
         by_origin = g.groupby("origin")[["mase", "mae"]].mean().sort_index()
         row["mase_std"] = by_origin["mase"].std()
+        row["mase_ratio"] = agg["mase"] / base_mase
         if model != baseline:
-            dm, p = dm_test(by_origin["mae"].values, base.values)
+            # 主檢定用 MASE（尺度無關）。level MAE 跨貨幣平均會被 KRW 等大數值貨幣
+            # 主導（約 86% 權重），僅保留為 mae_dm_* 對照。
+            dm, p = dm_test(by_origin["mase"].values, base_by_origin["mase"].values)
             row["dm_stat"], row["dm_p"] = dm, p
+            mdm, mp = dm_test(by_origin["mae"].values, base_by_origin["mae"].values)
+            row["mae_dm_stat"], row["mae_dm_p"] = mdm, mp
         else:
             row["dm_stat"], row["dm_p"] = np.nan, np.nan
+            row["mae_dm_stat"], row["mae_dm_p"] = np.nan, np.nan
         out.append(row)
     return pd.DataFrame(out).sort_values("mase").reset_index(drop=True)

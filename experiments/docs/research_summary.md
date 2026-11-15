@@ -191,6 +191,8 @@ KRW 和 TWD 的定盤價取自亞洲時段收盤（約倫敦早上 8 點），G1
 
 延後一天後點位改善完全消失。因此本文件各表中帶 `_feat` 的結果不應解讀為理論特徵有點位資訊；判斷時以不帶特徵的版本為準。
 
+> 2026-11 更新：`fxlib/data.py` 的 `load_panel` 已加入 `feat_lag` 參數且預設為 1（特徵延後一個交易日），`fxlib/backtest.py` 的 `summarize` 改以 MASE 做 DM 檢定（level MAE 版保留為 `mae_dm_*`）。本文件與 `results/`、`results_ext/` 中已提交的數字是修正前（feat_lag=0、level MAE DM）產生的，尚未用新預設重跑。
+
 ---
 
 ## 6. 各模型適合的資料類型與原因
