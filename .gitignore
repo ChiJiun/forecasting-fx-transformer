@@ -229,3 +229,6 @@ cython_debug/
 .idea/
 
 wandb
+
+# 月頻實驗的樣本外預測（約 24 MB，可由 experiments/monthly/run_monthly.py 重新產生）
+experiments/results_monthly/forecasts*.csv

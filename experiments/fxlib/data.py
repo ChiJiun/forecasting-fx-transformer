@@ -15,15 +15,22 @@ FEATURE_NAMES = ["log_ret", "rate_diff", "fwd_premium", "rate_diff_chg5"]
 EURO_MEMBERS = {"austria", "belgium", "finland", "france", "germany", "italy", "spain"}
 
 
-def load_panel(nations_dir, dedup_euro=True):
+def load_panel(nations_dir, dedup_euro=True, feat_lag=1):
     """回傳 (names, dates, fx, feats)。
 
     fx:    [N, T]  匯率水準
-    feats: [N, T, F] 理論導向特徵（當日已知）
+    feats: [N, T, F] 理論導向特徵
       - log_ret:        log(FX_t / FX_{t-1})，第一天補 0
       - rate_diff:      本國利率 - 美國利率（UIRP 核心變數）
       - fwd_premium:    (FFX - FX) / FX（CIRP 遠期溢價）
       - rate_diff_chg5: 利差的 5 日變化
+
+    feat_lag（預設 1）：特徵整體往後推 feat_lag 個交易日，feats[:, t] 只含 t-feat_lag
+    以前的資訊。原因：AUD/CAD/DKK/JPY/NOK/CHF/GBP 的 1M 遠期匯率
+    （data/1M_FORWARD_RATE.csv，RFV 來源）取價時間晚於 WM/R 倫敦 16:00 即期定盤，
+    同日的 fwd_premium(t) 與 t+1 即期報酬相關 0.43–0.51，等於偷看隔日行情
+    （見 docs/extension_report.md §0.1、results_ext/diag_fwd_premium_timing.csv）。
+    即期水準 fx 不受影響；feat_lag=0 只供重現修正前的結果。
     """
     paths = sorted(Path(nations_dir).glob("*.csv"))
     names, fx_list, feat_list = [], [], []
@@ -41,10 +48,25 @@ def load_panel(nations_dir, dedup_euro=True):
         fwd_premium = ((df["FFX"].values - fx) / fx).astype(np.float64)
         rd_chg5 = np.zeros_like(rate_diff)
         rd_chg5[5:] = rate_diff[5:] - rate_diff[:-5]
+        feat = np.stack([log_ret, rate_diff, fwd_premium, rd_chg5], axis=-1)
+        if feat_lag:
+            feat = _lag_features(feat, feat_lag)
         names.append("eurozone" if (dedup_euro and p.stem == "germany") else p.stem)
         fx_list.append(fx)
-        feat_list.append(np.stack([log_ret, rate_diff, fwd_premium, rd_chg5], axis=-1))
+        feat_list.append(feat)
     return names, dates, np.stack(fx_list), np.stack(feat_list)
+
+
+def _lag_features(feat, lag):
+    """把 [T, F] 特徵矩陣往後推 lag 列：out[t] = feat[t-lag]，前 lag 列重複第一列。"""
+    if lag < 0:
+        raise ValueError("feat_lag 必須 >= 0")
+    if lag == 0:
+        return feat
+    out = np.empty_like(feat)
+    out[lag:] = feat[:-lag]
+    out[:lag] = feat[0]
+    return out
 
 
 def make_windows(fx, feats, origins, context_len, horizon):

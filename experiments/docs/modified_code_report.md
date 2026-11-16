@@ -7,6 +7,7 @@
 ## 1. 設計原則
 
 1. **無洩漏**：任何模型在預測起點 t 之後的資訊（未來共變數、未來價格）都不可見；訓練/驗證視窗的預測目標與測試區之間保留 30 天 embargo。
+   > 2026-11 更正：這個原則在 2026-08 版程式中沒有完全做到。部分貨幣的 1M 遠期匯率取價時間晚於即期定盤，同日的 `fwd_premium(t)` 已經含有 t+1 即期報酬的資訊（見 `docs/extension_report.md` §0）。現行 `fxlib/data.py` 的 `load_panel` 預設 `feat_lag=1`，把特徵延後一個交易日，修正這個問題。已提交的結果仍是修正前（feat_lag=0）產生的。
 2. **多起點評估**：以 rolling-origin 回測取代單一測試視窗，所有比較附統計檢定。
 3. **統一介面**：所有模型實作 `fit(train_windows, val_windows)` / `predict(windows) -> [M, H]`，共用同一組視窗與指標程式。
 4. **選參紀律**：超參數只在驗證區間選擇，測試集只評估選出的配置。
@@ -21,7 +22,7 @@ experiments/
 │   ├── models.py               # 模型動物園 + 共用訓練器
 │   └── backtest.py             # 指標、DM 檢定
 ├── run_experiments.py          # 主實驗矩陣
-├── hf_transformer_exp.py       # 原報告模型無洩漏重測
+├── hf_transformer_exp.py       # 原報告模型無未來共變數重測
 ├── chronos_exp.py              # Chronos-Bolt 零樣本
 ├── sklearn_exp.py              # RF/MLP（原報告方法）補測
 ├── tune_experiments.py         # 超參數調校 + 敏感度
@@ -67,7 +68,7 @@ experiments/
 - `metric_rows()`：每 (nation, origin) 一列——MAE/MSE/sMAPE/MASE 與各視野絕對誤差 `abserr_h*`（h ∈ {1,5,14,30}）。
 - `mase_scales()`：MASE 分母 = 訓練期 naive 一步 MAE（每貨幣）。
 - `dm_test(a, b, max_lag)`：Diebold-Mariano，Bartlett-kernel HAC 變異數（處理重疊視窗自相關）+ Harvey-Leybourne-Newbold 小樣本修正；樣本過少時 lag 自動縮減（`min(max_lag, T//4)`）。
-- `summarize()`：多 seed 平均 → 模型層級總表（含 DM p 值）。
+- `summarize()`：多 seed 平均 → 模型層級總表（含 DM p 值）。（2026-11 更新：`dm_p` 改以 MASE 為損失，level MAE 版為 `mae_dm_p`；依 origin 對齊，共同起點少於 10 個時報錯。）
 
 ## 4. 實驗腳本詳解
 
@@ -84,7 +85,7 @@ train_cutoff   = 測試首起點 − 30           （embargo）
 
 2 folds（2022、2023 年度）× 10 模型 × 3 seeds（確定性模型跑 1 次）→ `results/raw.csv` + `meta.json`。
 
-### 4.2 hf_transformer_exp.py（原模型無洩漏重測）
+### 4.2 hf_transformer_exp.py（原模型無未來共變數重測）
 
 與原 transformer.py 的三個關鍵差異：
 1. `num_dynamic_real_features=0`——不給任何未來不可知的共變數；時間特徵只有日曆（dow/dom/doy 依 gluonts 慣例縮放）與 log-age，這些在未來視窗是真正已知的
@@ -110,6 +111,7 @@ RandomForestRegressor（n_estimators=100，同原報告預設）與 MLPRegressor
 6 個年度 fold（2018-03 ~ 2024-02），`--stride` 可調（5 → 312 起點；2 → 780 起點）。候選（皆驗證集選參）：
 - `shrunk_ridge`：λ·Ridge+feat + (1−λ)·RW，λ ∈ {0.1..1.0}
 - `fwd_bias`：s + γ(h/30)(F−s)，γ ∈ {−2..2}（γ<0 = Fama 遠期溢價偏誤）
+  > ⚠ 2026-11 更正：程式實際讀取 `ctx_feat[..., 1]`，也就是 rate_diff，而不是 fwd_premium（索引 2）。已提交結果中各 fold 都選了 γ=0，結果等同 RW，所以遠期溢價偏誤實際上還沒測過，要等修正後重跑。
 - `RidgeRich`：再加自身 5/20/60 日動能與**美元因子**（同起點跨幣別平均動能，利用視窗 [origin×nation] 排序 reshape 取均值）
 - `combo`：shrunk 版本等權平均
 
@@ -151,8 +153,8 @@ nations/*.csv
 
 | 面向 | 原始程式 | 修改後 |
 |---|---|---|
-| 測試視窗 | 1 個（最後 30 天） | 104 個起點（主矩陣）/ 780 個（挑戰賽） |
-| 未來共變數 | 洩漏（feat_dynamic_real 進未來視窗） | 全部只用起點當下已知資訊 |
+| 測試視窗 | 1 個（最後 30 天） | 104 個起點（主矩陣）/ 312 個（挑戰賽，已提交結果為 stride 5；`--stride 2` 可增至 780） |
+| 未來共變數 | 洩漏（feat_dynamic_real 進未來視窗） | 不使用預測視窗內的未來共變數（⚠ 理論特徵另有遠期匯率時間戳洩漏，見 §1 更正） |
 | 驗證集 | 與訓練重疊、未用於選模 | 獨立區間 + embargo、early stopping + 選 checkpoint |
 | 歐元區 | 7 國重複計算 | 合併為單一序列 |
 | 檢定 | 無 | DM（HAC+HLN） |

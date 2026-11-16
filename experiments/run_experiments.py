@@ -30,11 +30,12 @@ def main():
 
     L, H = 90, 30
     test_stride = 5
-    n_test_origins = 8 if args.smoke else 52
+    n_test_origins = 12 if args.smoke else 52  # smoke 也需 ≥ MIN_DM_ORIGINS(10) 個起點才能做 DM
     n_folds = 1 if args.smoke else 2
     seeds = 1 if args.smoke else args.seeds
 
-    names, dates, fx, feats = load_panel(ROOT / "nations")
+    FEAT_LAG = 1  # 特徵延後一個交易日（見 fxlib/data.py load_panel 說明）
+    names, dates, fx, feats = load_panel(ROOT / "nations", feat_lag=FEAT_LAG)
     T = fx.shape[1]
 
     all_rows = []
@@ -93,8 +94,10 @@ def main():
         "fold_spans": fold_spans, "n_nations": int(fx.shape[0]),
         "nations": names,
         "n_train_windows": int(train_w["ctx_level"].shape[0]),
+        "feat_lag": FEAT_LAG, "dm_loss": "mase",
     }
-    (out / "meta.json").write_text(json.dumps(meta, indent=2))
+    # smoke 另存 meta_smoke.json，避免覆寫正式結果的 meta（報告依 meta 標註 feat_lag）
+    (out / ("meta_smoke.json" if args.smoke else "meta.json")).write_text(json.dumps(meta, indent=2))
 
 
 if __name__ == "__main__":

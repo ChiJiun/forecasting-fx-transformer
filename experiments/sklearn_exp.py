@@ -1,7 +1,7 @@
 """補測原報告的傳統 ML 模型：Random Forest 與 MLP（sklearn）。
 
 與原報告同套件同預設精神（RF n_estimators=100；MLP 隱藏層 + Adam），
-但放進無洩漏的 rolling backtest 框架，輸入與 Ridge 相同的
+但放進不使用未來共變數的 rolling backtest 框架（理論特徵的時間戳處理依 load_panel 的 feat_lag），輸入與 Ridge 相同的
 報酬落後期（±理論特徵）設計矩陣，目標為 h=1..30 累積 log 報酬。
 
 用法：python experiments/sklearn_exp.py [--smoke]

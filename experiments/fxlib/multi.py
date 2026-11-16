@@ -488,7 +488,10 @@ def add_scaled_errors(per_no):
 
 def vs_rw_table(df, baseline="random_walk", dm_lag=6):
     """以 (nation, origin) 為單位先對 seed 取平均，再對每個模型計算：
-    mase、mae_ratio（<1 優於 RW）、各視野 abserr 比、DM 檢定 p 值。"""
+    mase、mae_ratio（<1 優於 RW）、各視野 abserr 比、DM 檢定 p 值。
+
+    注意欄位語意與 backtest.summarize 相反：這裡的 dm_stat / dm_p 是 level MAE 損失
+    （KRW 等高價位貨幣權重大），MASE 損失版是 dm_p_mase；summarize 的 dm_p 則是 MASE 版。"""
     import pandas as pd
     from .backtest import dm_test
     per_no = (df.groupby(["model", "nation", "origin"], as_index=False)

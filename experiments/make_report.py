@@ -14,6 +14,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fxlib.backtest import summarize
+from fxlib.reporting import dm_summary_text, feat_lag_note, pstr
 
 RESULTS = Path(__file__).parent / "results"
 
@@ -37,7 +38,7 @@ LABELS = {
     "dlinear_raw_level": "DLinear (raw level)",
     "patchtst": "PatchTST-lite",
     "patchtst_feat": "PatchTST + theory feat.",
-    "hf_transformer": "HF Transformer (原報告模型, 無洩漏)",
+    "hf_transformer": "HF Transformer (原報告模型, 無未來共變數)",
     "chronos_bolt": "Chronos-Bolt (zero-shot)",
     "random_forest": "Random Forest (原報告方法)",
     "random_forest_feat": "Random Forest + theory feat.",
@@ -123,6 +124,37 @@ def fig_horizon(per_no, models, path, col_tpl="abserr_h{h}", ylabel="平均絕�
     plt.close(fig)
 
 
+TUNED_PAIRS = {"tuned_ridge": "ridge_returns_feat", "tuned_nlinear": "nlinear",
+               "tuned_dlinear": "dlinear", "tuned_patchtst": "patchtst"}
+
+
+def tuning_text(summary, cfg_path, meta):
+    """調參段落：數字全部來自 summary 與 chosen_configs.json。"""
+    m = summary.set_index("model")
+    diffs = [(LABELS.get(t, t), LABELS.get(b, b), m.loc[t, "mase"] - m.loc[b, "mase"])
+             for t, b in TUNED_PAIRS.items() if t in m.index and b in m.index]
+    parts = []
+    if diffs:
+        parts.append("調參後 MASE 相對原設定的變動：" + "、".join(
+            f"{n} 對 {b} {d:+.3f}" for n, b, d in diffs) + "。")
+    tuned_sig = [LABELS.get(t, t) for t in TUNED_PAIRS
+                 if t in m.index and m.loc[t, "dm_stat"] < 0 and m.loc[t, "dm_p"] < 0.05]
+    parts.append("調參後的模型中，" + (
+        "在 5% 水準顯著優於 Random Walk 的有：" + "、".join(tuned_sig) if tuned_sig
+        else "沒有任何一個在 5% 水準顯著優於 Random Walk") + "。")
+    if cfg_path.exists():
+        cc = json.loads(cfg_path.read_text())
+        ridge = {k: v.get("use_feats") for k, v in cc.items() if k.endswith("_ridge")}
+        if ridge:
+            parts.append("Ridge 各 fold 選出的 use_feats：" + "、".join(
+                f"{k.split('_')[0]}={v}" for k, v in sorted(ridge.items())) + "。")
+            if any(ridge.values()) and not meta.get("feat_lag"):
+                parts.append("（本結果產生時理論特徵未延後，選中理論特徵可能反映時間戳洩漏，"
+                             "不能據此判斷理論特徵有用。）")
+    parts.append("詳見 chosen_configs.json。")
+    return "".join(parts)
+
+
 def main():
     frames = [pd.read_csv(RESULTS / "raw.csv")]
     for extra in ("raw_hf.csv", "raw_chronos.csv", "raw_tuned.csv", "raw_sklearn.csv"):
@@ -152,7 +184,9 @@ def main():
             sdf.pivot(index="alpha", columns="n_lags", values="mase")
                .round(3).to_markdown(), "",
             f"全部 {len(sdf)} 組參數的 MASE 介於 {sdf.mase.min():.3f}–{sdf.mase.max():.3f}，"
-            "點位結論不依賴特定超參數。\n",
+            "點位結論不依賴特定超參數"
+            + ("" if meta.get("feat_lag") else "（此網格使用理論特徵，為 feat_lag 修正前的結果）")
+            + "。\n",
         ]
 
     per_no = (df.groupby(["model", "nation", "origin"], as_index=False)
@@ -175,6 +209,35 @@ def main():
 
     spans = meta.get("fold_spans", [])
     span_txt = "、".join(f"{a} ~ {b}" for a, b in spans)
+
+    focus_lines = []
+    for m in ("hf_transformer", "chronos_bolt", "dlinear_raw_level", "nlinear_feat"):
+        r = summary[summary.model == m]
+        if len(r):
+            r = r.iloc[0]
+            focus_lines.append(f"{LABELS.get(m, m)} MASE 比 {r.mase_ratio:.3f}（DM {pstr(r.dm_p)}）")
+    if not focus_lines:
+        focus_lines = ["（本次結果不含這些模型）"]
+
+    tune_text = tuning_text(summary, RESULTS / "chosen_configs.json", meta)
+
+    rwc_p = RESULTS / "rwchal_dm.csv"
+    if rwc_p.exists():
+        rwc = pd.read_csv(rwc_p)
+        b = rwc.sort_values("path_ratio").iloc[0]
+        rwc_text = (f"結果（rwchal_dm.csv）：整段路徑 MAE 比最低的是 {b.model}，"
+                    f"{b.path_ratio:.4f}（DM {pstr(b.path_p)}），h=30 為 {b.h30_ratio:.4f}"
+                    f"（{pstr(b.h30_p)}）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，"
+                    "KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**"
+                    "已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
+                    "不是 fwd_premium（索引 2），`fwd_bias` 的結果尚待修正後重跑"
+                    "（`combo` 為 shrunk_ridge 與 shrunk_rich 的等權平均，不含 fwd_bias）。"
+                    "另外，已提交的 rwchal_dm.csv 產生於 feat_lag 修正之前，"
+                    "其中使用理論特徵的模型（ridge_feat_6f、shrunk_ridge、ridge_rich、shrunk_rich、combo）"
+                    "不可採信。\n")
+    else:
+        rwc_text = "（找不到 rwchal_dm.csv，略過本節結果。）\n"
+
     lines = [
         "# 匯率預測實驗改善結果（v2）\n",
         "## 評估方法（與原 NSTC 報告的差異）\n",
@@ -188,52 +251,39 @@ def main():
         "已合併為單一 eurozone 序列，避免評估被歐元重複加權 7 倍。",
         "- **修正資料洩漏**：原程式把預測視窗內的未來遠期匯率與未來利率餵給模型"
         "（HF TimeSeriesTransformer 的 `feat_dynamic_real` 會進 `future_time_features`）；"
-        "本實驗所有模型（包含重測的 HF Transformer）只用預測起點當下已知的資訊。",
+        "本實驗所有模型（包含重測的 HF Transformer）不再使用預測視窗內的未來共變數。"
+        + feat_lag_note(meta),
         "- **訓練流程**：early stopping（驗證集與測試區間隔 30 天 embargo）、"
         f"神經模型多 seeds 平均、log-level instance normalization。\n",
         "## 模型總表\n",
         summary.round(4).to_markdown(index=False), "",
-        "註：`dm_p` 為與 Random Walk 的 MAE 差異之 DM 檢定 p 值（小 = 顯著差於/優於，看 dm_stat 正負）；",
+        "註：`dm_p` 為與 Random Walk 的 MASE 差異之 DM 檢定 p 值（尺度無關；小 = 顯著差於/優於，看 dm_stat 正負），"
+        "level MAE 合併版保留為 `mae_dm_p`；`mase_ratio` 為 MASE 相對 RW 的比值；",
         "`abserr_h*` 為第 h 天的平均絕對誤差（level 尺度）。\n",
         "## 跨期穩健性（各 fold MASE）\n",
         fold_mase.round(3).to_markdown(), "",
         "## 主要發現\n",
-        "1. **點位誤差：沒有任何模型顯著贏過 Random Walk。**最佳模型（Ridge + 理論特徵）"
-        "MASE 5.009 vs RW 5.042（DM p=0.21），且兩個年度區間排名一致。"
-        "原報告的 HF TimeSeriesTransformer 在修正洩漏後 MASE 6.19，"
-        "顯著**差於** RW（DM p=0.02）且 seed 間變異大——原報告表面上的優勢"
-        "主要來自未來共變數洩漏與單一測試視窗的抽樣運氣。"
-        "這與 Meese-Rogoff (1983) 以降四十年的匯率文獻一致，是誠實且可辯護的基準結論。",
-        "2. **零樣本基礎模型（Chronos-Bolt）不是免費的午餐**：點位 MASE 5.59"
-        "（差於 RW，p=0.05）——通用時序預訓練在匯率點位上沒有優勢。",
-        "3. **消融**：拿掉 instance normalization（raw level）MASE 惡化至 7.06（p<1e-13）；"
-        "理論特徵直接串進高容量神經模型（NLinear+feat 6.33）反而顯著變差——"
-        "特徵的價值需要低容量/強正則化模型（Ridge）才能萃取，"
-        "這解釋了為何許多深度模型加了總經變數卻更差。\n",
+        "以下數字由上方總表動態產生（DM 以 MASE 為損失）。\n",
+        "1. **點位誤差**：" + dm_summary_text(summary, LABELS),
+        "2. **原報告模型、零樣本模型與消融**：" + "；".join(focus_lines) + "。\n",
         *sens_tables,
         "## 超參數調校\n",
         "所有可調模型均以每個 fold 自身的驗證區間（測試前 250 天、30 天 embargo）"
         "做 grid search 選參，測試集只評估選出的配置（表中 `tuned_*`）。"
-        "調參後各模型 MASE 變動皆在 ±0.1 內，點位仍無法顯著贏過 Random Walk，"
-        "且兩個 fold 各自選出的 Ridge 都包含理論特徵（use_feats=True）——"
-        "調參不改變任何主要結論（詳見 chosen_configs.json）。\n",
+        + tune_text + "\n",
         "## 挑戰 Random Walk：文獻導向的專項嘗試（rw_challenge.py）\n",
         "為回答「點位預測是否真的無法贏過 RW」，另做了一輪專項實驗，"
-        "將評估擴至 6 個年度區間（2018-03 ~ 2024-02，最密 780 個起點），"
+        "將評估擴至 6 個年度區間（2018-03 ~ 2024-02），"
         "並嘗試文獻中曾報告成功的策略（皆在驗證集選參）：\n",
         "- **Shrinkage 組合** λ·模型+(1−λ)·RW（預測組合文獻的標準工具）",
-        "- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）",
+        "- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）。"
+        "⚠ 實作誤用 rate_diff 而非 fwd_premium，已提交結果中這項策略實際上沒有測到（見下方已知問題）",
         "- **美元因子** 跨幣別共同動能（Verdelhan 2018）+ 自身 5/20/60 日動能/反轉\n",
-        "結果（rwchal_dm.csv）：最佳配置 shrunk_ridge 整段路徑 MAE 比 RW 低 0.28%"
-        "（DM p=0.27）、h=30 低 0.9%（p=0.096，邊緣）；但把起點加密到 780 個後"
-        "此邊緣顯著消失（p=0.68），顯示訊號不穩健。遠期溢價的 γ 在所有 fold "
-        "的驗證集上都選 0（退化為 RW）；美元因子與動能未提升點位。"
-        "**結論：在 30 天視野的日頻點位預測上，即使用盡文獻工具，"
-        "RW 仍無法被顯著擊敗**——這符合 Rossi (2013) 對匯率可預測性的系統性回顧。\n",
+        rwc_text,
         "## 限制與後續\n",
         "- Chronos 預訓練語料可能與部分金融序列重疊，其 zero-shot 結果僅供參考。",
-        "- 本表 `dm_p` 以 level MAE 合併檢定，高價位貨幣（如 KRW）權重較大；"
-        "尺度無關的 MASE 比較見 results_ext/existing_vs_rw_scalefree.csv。\n",
+        "- 本表 `dm_p` 以 MASE 為損失（尺度無關）；`mae_dm_p` 為 level MAE 合併版，"
+        "其中高價位貨幣（如 KRW）權重較大，僅供對照。\n",
         f"## 各貨幣 MASE（{LABELS.get(best, best)} vs Random Walk）\n",
         nat.round(3).to_markdown(),
         "\n\n![MASE](fig_mase.png)\n![horizon](fig_horizon_mae.png)",

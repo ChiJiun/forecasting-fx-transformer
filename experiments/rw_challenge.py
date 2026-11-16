@@ -4,7 +4,7 @@
   1. shrunk_ridge   : λ·Ridge+特徵 + (1−λ)·RW，λ ∈ {0.1..1.0} 驗證集選
   2. fwd_bias       : pred = s + γ·(h/30)·(FFX−s)，γ ∈ {-2..2} 驗證集選
                       （γ<0 即利用 Fama (1984) 遠期溢價偏誤）
-  3. combo          : shrunk_ridge 與 fwd_bias 的等權平均
+  3. combo          : shrunk_ridge 與 shrunk_rich 的等權平均（不含 fwd_bias）
 評估：6 個年度 fold（每 fold 52 起點 × 11 貨幣 = 共 312 起點），
 DM 檢定分整段路徑 / h=1 / h=5 / h=30。
 
@@ -60,7 +60,7 @@ class RidgeRich(RidgeReturns):
 def fwd_pred(w, gamma):
     """遠期匯率偏誤預測子：s_t + γ·(h/H)·(F_t − s_t)。"""
     s = w["ctx_level"][:, -1:]
-    fp = w["ctx_feat"][:, -1, 1]  # fwd_premium = (F−s)/s
+    fp = w["ctx_feat"][:, -1, 1]  # 原意為 fwd_premium = (F−s)/s；已知問題：索引 1 實為 rate_diff，fwd_premium 是索引 2，待修正後重跑
     hfrac = np.arange(1, H + 1)[None, :] / H
     return s * (1.0 + gamma * fp[:, None] * hfrac)
 

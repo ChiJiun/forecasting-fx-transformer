@@ -4,6 +4,11 @@
 **程式碼位置**：`D:\Code\GitHub Desktop\forcasting-fx-transformer\experiments\`
 **完成日期**：2026-08-05
 
+> **2026-11 更正（本文件為 2026-08 的歷史紀錄，內文未改寫）**：
+> 1. 「無洩漏特徵」的說法不成立。AUD/CAD/DKK/JPY/NOK/CHF/GBP 的 1M 遠期匯率取價時間晚於 WM/R 16:00 即期定盤，同日 `fwd_premium(t)` 已含 t+1 即期報酬資訊（相關 0.43–0.51）。本文件所有帶理論特徵（`_feat`、Ridge + 理論特徵、調參選中 use_feats=True）的結果都不可採信，詳見 `docs/extension_report.md` §0 與 `docs/research_summary.md` §5。
+> 2. 本文件的 DM p 值是以 level MAE 跨貨幣合併計算（KRW 權重約 86%）。現行 `summarize` 的 `dm_p` 改以 MASE 為損失，最新數字見 `results/report.md` 與 `docs/performance_report.md`。
+> 3. 「兩個年度區間模型排名一致」為近似描述，兩區間排名的 Spearman 相關約 0.93，並非完全一致。
+
 ---
 
 ## 1. 背景與目標
@@ -48,7 +53,7 @@
 |---|---|
 | **Rolling-origin 回測** | 2 個年度測試區間（2022-03-04 ~ 2023-02-24、2023-03-03 ~ 2024-02-23），每區間 52 個預測起點（每 5 個交易日一個），每起點預測未來 30 天路徑 |
 | **資料切分** | 每個區間各自重訓；驗證集為測試前 250 天（用於 early stopping 與選參）；訓練/驗證視窗的預測目標與測試區之間有 30 天 embargo，嚴格杜絕洩漏 |
-| **無洩漏特徵** | 所有特徵只用預測起點當下已知的值：UIRP 利差（本國利率−美國利率）、CIRP 遠期溢價 ((FFX−FX)/FX)、日 log 報酬、利差 5 日變化 |
+| **理論特徵**（⚠ 2026-11 更正：遠期溢價有時間戳洩漏，見文件開頭） | 原設計為只用預測起點當下已知的值：UIRP 利差（本國利率−美國利率）、CIRP 遠期溢價 ((FFX−FX)/FX)、日 log 報酬、利差 5 日變化 |
 | **歐元區去重** | 7 國合併為單一 eurozone 序列，面板為 11 條獨立貨幣 |
 | **點位檢定** | Diebold-Mariano 檢定 vs Random Walk（HAC 變異數處理重疊視窗的自相關 + Harvey-Leybourne-Newbold 小樣本修正） |
 | **訓練規範** | 神經模型 3 seeds 平均、early stopping（patience 6）、L1 loss、log-level instance normalization |
@@ -86,7 +91,7 @@
 ## 5. 實驗歷程（三輪迭代）
 
 - **第 1 輪**：建框架 + 10 模型 × 52 起點 × 17 國（尚未去重）。發現：無模型顯著贏 RW；歐元區重複問題浮現。
-- **第 2 輪**：歐元去重、擴為 2 個年度區間、HF Transformer 無洩漏重測、Chronos 零樣本。核心發現成形。
+- **第 2 輪**：歐元去重、擴為 2 個年度區間、HF Transformer 無未來共變數重測、Chronos 零樣本。核心發現成形。
 - **第 3 輪**：超參數調校（每 fold 用自身驗證區間 grid search，測試集只評選出的配置）+ 全網格敏感度分析。確認所有結論對超參數穩健。
 
 ---
@@ -106,7 +111,7 @@
 | DLinear | 5.147 | 0.026（顯著**較差**） |
 | NLinear | 5.158 | 0.020（顯著較差） |
 | Chronos-Bolt 零樣本 | 5.589 | 0.052（較差） |
-| HF Transformer（原模型，無洩漏） | 6.190 | 0.024（顯著**較差**） |
+| HF Transformer（原模型，無未來共變數） | 6.190 | 0.024（顯著**較差**） |
 | NLinear + 特徵（消融） | 6.325 | <0.001（顯著較差） |
 | DLinear raw level（消融） | 7.061 | <10⁻¹³（顯著較差） |
 
@@ -145,7 +150,7 @@ experiments/
 │   ├── models.py          # 全部模型（統一 fit/predict 介面）
 │   └── backtest.py        # 指標、DM 檢定
 ├── run_experiments.py     # 主實驗矩陣（python experiments/run_experiments.py）
-├── hf_transformer_exp.py  # 原報告模型無洩漏重測
+├── hf_transformer_exp.py  # 原報告模型無未來共變數重測
 ├── chronos_exp.py         # Chronos-Bolt 零樣本
 ├── tune_experiments.py    # 超參數調校 + 敏感度
 ├── make_report.py         # 彙整結果、產圖、寫 report.md

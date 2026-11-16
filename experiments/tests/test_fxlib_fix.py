@@ -1,0 +1,125 @@
+"""feat_lag 與 MASE 版 DM 檢定的回歸測試。
+
+用法：python -m pytest experiments/tests -q   （或直接 python experiments/tests/test_fxlib_fix.py）
+"""
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fxlib.data import load_panel, _lag_features  # noqa: E402
+from fxlib.backtest import summarize, dm_test  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_lag_features_shift():
+    feat = np.arange(12, dtype=float).reshape(6, 2)
+    out = _lag_features(feat, 2)
+    assert np.array_equal(out[2:], feat[:-2])
+    assert np.array_equal(out[:2], np.repeat(feat[:1], 2, axis=0))
+    assert _lag_features(feat, 0) is feat
+
+
+def test_load_panel_lag_alignment():
+    n0, d0, fx0, f0 = load_panel(ROOT / "nations", feat_lag=0)
+    n1, d1, fx1, f1 = load_panel(ROOT / "nations")  # 預設 feat_lag=1
+    assert n0 == n1 and len(n1) == 11 and "eurozone" in n1
+    assert np.array_equal(fx0, fx1)  # 即期水準不受影響
+    assert np.array_equal(f1[:, 1:], f0[:, :-1])  # feats[t] = 未延後的 feats[t-1]
+    assert np.array_equal(f1[:, 0], f0[:, 0])
+
+
+def _toy_df():
+    """兩國、40 起點；KRW 尺度大。model_b 只在 KRW 上較好、在小尺度貨幣上較差。"""
+    rng = np.random.default_rng(0)
+    rows = []
+    for o in range(40):
+        for nation, scale in (("south_korea", 1000.0), ("japan", 1.0)):
+            base = abs(rng.normal(1.0, 0.1))
+            for model, mult in (("random_walk", 1.0),
+                                ("model_b", 0.97 if nation == "south_korea" else 1.30)):
+                m = base * mult
+                rows.append({"model": model, "seed": 0, "nation": nation, "origin": o,
+                             "mase": m, "mae": m * scale, "mse": (m * scale) ** 2,
+                             "smape": 0.01 * m,
+                             **{f"abserr_h{h}": m * scale for h in (1, 5, 14, 30)}})
+    return pd.DataFrame(rows)
+
+
+def test_summarize_uses_mase_for_dm():
+    s = summarize(_toy_df()).set_index("model")
+    b = s.loc["model_b"]
+    # MASE：model_b 平均變差 → DM 統計量 > 0；level MAE 被 KRW 主導 → < 0
+    assert b["dm_stat"] > 0 and b["mae_dm_stat"] < 0
+    assert b["mase_ratio"] > 1
+    assert np.isnan(s.loc["random_walk", "dm_p"])
+    assert abs(s.loc["random_walk", "mase_ratio"] - 1) < 1e-12
+
+
+def test_summarize_aligns_missing_origins():
+    """模型缺少部分 origin（長度相同但集合不同）時，DM 只在共同 origin 上計算。"""
+    df = _toy_df()
+    # model_b 去掉 origin 0–4，另補上 RW 沒有的 origin 100–104
+    b = df[(df.model == "model_b") & (df.origin >= 5)]
+    extra = df[(df.model == "model_b") & (df.origin < 5)].assign(origin=lambda d: d.origin + 100)
+    shifted = pd.concat([df[df.model == "random_walk"], b, extra], ignore_index=True)
+    with pytest.warns(UserWarning):
+        got = summarize(shifted).set_index("model").loc["model_b"]
+    ref = summarize(df[df.origin >= 5]).set_index("model").loc["model_b"]
+    assert np.isclose(got["dm_stat"], ref["dm_stat"])
+    assert np.isclose(got["mae_dm_stat"], ref["mae_dm_stat"])
+    assert got["n_dm_origins"] == 35
+
+
+def test_summarize_raises_when_too_few_common_origins():
+    df = _toy_df()
+    rw = df[df.model == "random_walk"]
+    b = df[(df.model == "model_b")].assign(origin=lambda d: d.origin + 1000)  # 完全不重疊
+    with pytest.raises(ValueError, match="共同起點"):
+        summarize(pd.concat([rw, b], ignore_index=True))
+
+
+def test_dm_identical_losses():
+    x = np.linspace(1, 2, 30)
+    assert dm_test(x, x) == (0.0, 1.0)
+
+
+def test_summarize_smoke_scale():
+    """run_experiments.py --smoke 的起點數必須 ≥ MIN_DM_ORIGINS，summarize 才不會中斷。"""
+    import re
+    from fxlib.backtest import MIN_DM_ORIGINS
+    src = (ROOT / "experiments" / "run_experiments.py").read_text(encoding="utf-8")
+    n_smoke = int(re.search(r"n_test_origins\s*=\s*(\d+)\s+if args\.smoke", src).group(1))
+    assert n_smoke >= MIN_DM_ORIGINS
+    df = _toy_df()
+    s = summarize(df[df.origin < n_smoke]).set_index("model")
+    assert s.loc["model_b", "n_dm_origins"] == n_smoke
+    with pytest.raises(ValueError, match="共同起點"):
+        summarize(df[df.origin < MIN_DM_ORIGINS - 1])
+
+
+def test_reporting_text_follows_summary():
+    from fxlib.reporting import dm_findings, dm_summary_text, feat_lag_note, pstr
+    s = summarize(_toy_df())
+    f = dm_findings(s, {"model_b": "B"})
+    assert f["best"][0] == "B" and f["better"] == []
+    assert len(f["worse"]) == 1 and f["worse"][0][0] == "B"  # model_b 在 MASE 上顯著較差
+    txt = dm_summary_text(s, {"model_b": "B"})
+    assert "沒有任何模型在 5% 水準顯著優於" in txt and "B（MASE 比" in txt
+    assert pstr(0.0001) == "p<0.001" and pstr(0.21) == "p=0.210"
+    assert "未延後" in feat_lag_note({}) and "未延後" in feat_lag_note({"feat_lag": 0})
+    assert "延後 1 個交易日" in feat_lag_note({"feat_lag": 1})
+    only_base = s[s.model == "random_walk"]
+    with pytest.raises(ValueError, match="只有 baseline"):
+        dm_findings(only_base, {})
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_"):
+            fn()
+            print("ok", name)
