@@ -57,10 +57,13 @@ def main():
 
     # ---- 1. 總表 ----
     S.append("## 1. 模型總表（20 個變體，依 MASE 排序）\n")
-    cols = ["model", "mase", "smape", "mae", "mse", "mase_std", "dm_stat", "dm_p"]
+    cols = ["model", "mase", "mase_ratio", "smape", "mae", "mse", "mase_std",
+            "dm_stat", "dm_p", "mae_dm_p"]
     S.append(lab(summary[cols]).round(4).to_markdown(index=False))
-    S.append("\n- `dm_p`：與 Random Walk 的整段路徑 MAE 差異之 Diebold-Mariano p 值"
-             "（dm_stat<0 表示優於 RW）\n"
+    S.append("\n- `dm_p`：與 Random Walk 的整段路徑 MASE 差異之 Diebold-Mariano p 值"
+             "（尺度無關；dm_stat<0 表示優於 RW）\n"
+             "- `mae_dm_p`：同上但以 level MAE 計算（KRW 等高價位貨幣權重大，僅供對照）\n"
+             "- `mase_ratio`：MASE 相對 Random Walk 的比值（<1 優於 RW）\n"
              "- `mase_std`：MASE 的跨起點標準差（衡量表現穩定度）\n")
 
     # ---- 2. 誤差隨視野 ----

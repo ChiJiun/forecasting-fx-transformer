@@ -193,11 +193,14 @@ def main():
         f"神經模型多 seeds 平均、log-level instance normalization。\n",
         "## 模型總表\n",
         summary.round(4).to_markdown(index=False), "",
-        "註：`dm_p` 為與 Random Walk 的 MAE 差異之 DM 檢定 p 值（小 = 顯著差於/優於，看 dm_stat 正負）；",
+        "註：`dm_p` 為與 Random Walk 的 MASE 差異之 DM 檢定 p 值（尺度無關；小 = 顯著差於/優於，看 dm_stat 正負），"
+        "level MAE 合併版保留為 `mae_dm_p`；`mase_ratio` 為 MASE 相對 RW 的比值；",
         "`abserr_h*` 為第 h 天的平均絕對誤差（level 尺度）。\n",
         "## 跨期穩健性（各 fold MASE）\n",
         fold_mase.round(3).to_markdown(), "",
         "## 主要發現\n",
+        "> 注意：以下內文數字寫於 2026-08，當時 DM 以 level MAE 計算、特徵未延後一天"
+        "（見 docs/extension_report.md §0）；以目前程式重跑後，上方總表的數值會與內文不同。\n",
         "1. **點位誤差：沒有任何模型顯著贏過 Random Walk。**最佳模型（Ridge + 理論特徵）"
         "MASE 5.009 vs RW 5.042（DM p=0.21），且兩個年度區間排名一致。"
         "原報告的 HF TimeSeriesTransformer 在修正洩漏後 MASE 6.19，"
@@ -232,8 +235,8 @@ def main():
         "RW 仍無法被顯著擊敗**——這符合 Rossi (2013) 對匯率可預測性的系統性回顧。\n",
         "## 限制與後續\n",
         "- Chronos 預訓練語料可能與部分金融序列重疊，其 zero-shot 結果僅供參考。",
-        "- 本表 `dm_p` 以 level MAE 合併檢定，高價位貨幣（如 KRW）權重較大；"
-        "尺度無關的 MASE 比較見 results_ext/existing_vs_rw_scalefree.csv。\n",
+        "- 本表 `dm_p` 以 MASE 為損失（尺度無關）；`mae_dm_p` 為 level MAE 合併版，"
+        "其中高價位貨幣（如 KRW）權重較大，僅供對照。\n",
         f"## 各貨幣 MASE（{LABELS.get(best, best)} vs Random Walk）\n",
         nat.round(3).to_markdown(),
         "\n\n![MASE](fig_mase.png)\n![horizon](fig_horizon_mae.png)",

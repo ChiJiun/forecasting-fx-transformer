@@ -88,9 +88,11 @@ def summarize(df, baseline="random_walk"):
         if model != baseline:
             # 主檢定用 MASE（尺度無關）。level MAE 跨貨幣平均會被 KRW 等大數值貨幣
             # 主導（約 86% 權重），僅保留為 mae_dm_* 對照。
-            dm, p = dm_test(by_origin["mase"].values, base_by_origin["mase"].values)
+            # 依 origin 對齊（inner join），避免模型缺少部分起點時序列錯位
+            al = by_origin.join(base_by_origin, rsuffix="_rw", how="inner")
+            dm, p = dm_test(al["mase"].values, al["mase_rw"].values)
             row["dm_stat"], row["dm_p"] = dm, p
-            mdm, mp = dm_test(by_origin["mae"].values, base_by_origin["mae"].values)
+            mdm, mp = dm_test(al["mae"].values, al["mae_rw"].values)
             row["mae_dm_stat"], row["mae_dm_p"] = mdm, mp
         else:
             row["dm_stat"], row["dm_p"] = np.nan, np.nan

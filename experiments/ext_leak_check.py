@@ -53,7 +53,8 @@ class RidgeFeatVariant(RidgeReturns):
 
 
 def main():
-    names, dates, fx, feats = load_panel(ROOT / "nations")
+    # 本腳本由 RidgeFeatVariant 自行控制特徵延後（lag 參數），必須讀未延後的原始特徵
+    names, dates, fx, feats = load_panel(ROOT / "nations", feat_lag=0)
     T, N = fx.shape[1], fx.shape[0]
     rows = []
     for fold in range(2):

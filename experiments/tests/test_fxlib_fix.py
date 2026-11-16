@@ -59,6 +59,19 @@ def test_summarize_uses_mase_for_dm():
     assert abs(s.loc["random_walk", "mase_ratio"] - 1) < 1e-12
 
 
+def test_summarize_aligns_missing_origins():
+    """模型缺少部分 origin（長度相同但集合不同）時，DM 只在共同 origin 上計算。"""
+    df = _toy_df()
+    # model_b 去掉 origin 0–4，另補上 RW 沒有的 origin 100–104
+    b = df[(df.model == "model_b") & (df.origin >= 5)]
+    extra = df[(df.model == "model_b") & (df.origin < 5)].assign(origin=lambda d: d.origin + 100)
+    shifted = pd.concat([df[df.model == "random_walk"], b, extra], ignore_index=True)
+    got = summarize(shifted).set_index("model").loc["model_b"]
+    ref = summarize(df[df.origin >= 5]).set_index("model").loc["model_b"]
+    assert np.isclose(got["dm_stat"], ref["dm_stat"])
+    assert np.isclose(got["mae_dm_stat"], ref["mae_dm_stat"])
+
+
 def test_dm_identical_losses():
     x = np.linspace(1, 2, 30)
     assert dm_test(x, x) == (0.0, 1.0)
