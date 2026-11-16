@@ -7,12 +7,26 @@
     24
   ],
   "main_origin_start": "2000-01",
+  "macro_subset": [
+    "japan",
+    "south_korea",
+    "taiwan",
+    "uk",
+    "sweden"
+  ],
+  "money_breaks": {
+    "us": [
+      "2020-05"
+    ]
+  },
   "ppp_long_origin_start": "1995-01",
   "subperiod_cut": "2012-01",
   "release_lag": {
     "cpi": 2,
     "cpi_australia": 4,
-    "rate": 1
+    "rate": 1,
+    "money": 3,
+    "ip": 3
   },
   "min_train": 60,
   "models": [
@@ -23,6 +37,7 @@
     "ppp_calib_hl36",
     "ppp_calib_hl36_noinfl",
     "ppp_calib_hl60",
+    "ppp_calib_hl60_noinfl",
     "uip_theory",
     "uip_each",
     "taylor_each",

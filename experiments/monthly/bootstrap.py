@@ -67,7 +67,7 @@ def fast_forecasts(z, y, h, hl_list=(36, 60)):
 
 
 def panel_stats(y, yhat, mask, lag):
-    """在 mask 上計算面板 RMSE 比與面板 CW t（先跨貨幣平均再做 NW）。"""
+    """在 mask 上計算面板 RMSE 比、面板 CW t 與面板 DM t（先跨貨幣平均再做 NW）。"""
     e_rw = np.where(mask, y ** 2, 0.0)
     e_m = np.where(mask, (y - yhat) ** 2, 0.0)
     cw = np.where(mask, y ** 2 - ((y - yhat) ** 2 - yhat ** 2), 0.0)
@@ -75,25 +75,31 @@ def panel_stats(y, yhat, mask, lag):
     cnt = mask.sum(0)
     tt = cnt > 0
     cw_t = mfx.nw_tstat(cw.sum(0)[tt] / cnt[tt], lag)
-    return ratio, cw_t
+    dm_t = mfx.nw_tstat((e_rw - e_m).sum(0)[tt] / cnt[tt], lag)
+    return ratio, cw_t, dm_t
 
 
-def stationary_bootstrap_index(T, mean_block, rng):
-    idx = np.empty(T, dtype=int)
-    idx[0] = rng.integers(T)
+def stationary_bootstrap_index(n_out, pool_len, mean_block, rng):
+    """Politis-Romano 平穩 bootstrap：產生 n_out 個 [0, pool_len) 內的索引。
+    區塊起點在 pool 內均勻抽取，區塊在 pool 尾端循環接回開頭，每個位置被抽中的機率相同。"""
+    idx = np.empty(n_out, dtype=int)
+    idx[0] = rng.integers(pool_len)
     p = 1.0 / mean_block
-    for k in range(1, T):
-        idx[k] = rng.integers(T) if rng.random() < p else (idx[k - 1] + 1) % T
+    for k in range(1, n_out):
+        idx[k] = rng.integers(pool_len) if rng.random() < p else (idx[k - 1] + 1) % pool_len
     return idx
 
 
-def simulate_s(s, rng, mean_block=12):
-    """以實際月報酬（各貨幣同一時間索引）重抽，從各貨幣第一個觀測值累加成隨機漫步。"""
+def simulate_s(s, rng, mean_block=12, demean=False):
+    """以實際月報酬（各貨幣同一時間索引）重抽，從各貨幣第一個觀測值累加成隨機漫步。
+    demean=True 時先扣除各貨幣的報酬平均（無漂移的隨機漫步）。"""
     N, T = s.shape
     r = np.diff(s, axis=1)  # [N, T-1]，可能含 NaN（歐元區 1994 年前）
     valid_t = np.where(~np.isnan(r).any(0))[0]  # 全部貨幣都有報酬的月份
     pool = r[:, valid_t]
-    k = stationary_bootstrap_index(T - 1, mean_block, rng) % pool.shape[1]
+    if demean:
+        pool = pool - pool.mean(axis=1, keepdims=True)
+    k = stationary_bootstrap_index(T - 1, pool.shape[1], mean_block, rng)
     rs = pool[:, k]
     out = np.full_like(s, np.nan)
     for i in range(N):

@@ -66,6 +66,53 @@ def test_training_targets_realized():
     assert m[:, :t - h + 1].any()
 
 
+def _perturb_invisible(df, t, lag, rng, col_lag=None):
+    """把 t 月月初看不到的列（參考月份 > t - lag）換成亂數。"""
+    out = df.copy()
+    for c in out.columns:
+        L = (col_lag or {}).get(c, lag)
+        rows = out.index[t - L + 1:]
+        out.loc[rows, c] = rng.uniform(0.5, 2.0, len(rows)) * np.nanmean(out[c].to_numpy(float))
+    return out
+
+
+def test_raw_invisible_rows_do_not_change_features():
+    """原始資料中依發布延遲在 t 還看不到的列全部換成亂數，所有國家 <= t 的特徵（含子集的
+    z_mon、gap_diff）都必須完全相同。"""
+    months, fx, cpi, rate = mfx.load_monthly()
+    money, ip = mfx.load_macro()
+    rng = np.random.default_rng(2)
+    L = mfx.RELEASE_LAG
+    for ym in ("2005-07", "2021-03"):  # 後者在美國 M1 斷點之後
+        t = int(np.where(months == ym)[0][0])
+        fx2 = _perturb_invisible(fx, t, 0, rng)
+        cpi2 = _perturb_invisible(cpi, t, L["cpi"], rng, {"australia": L["cpi_australia"]})
+        rate2 = _perturb_invisible(rate, t, L["rate"], rng)
+        money2 = _perturb_invisible(money, t, L["money"], rng)
+        ip2 = _perturb_invisible(ip, t, L["ip"], rng)
+        for build, a, b in (
+            (lambda *x: mfx.build_features(*x[:3]), (fx, cpi, rate), (fx2, cpi2, rate2)),
+            (lambda *x: mfx.build_macro_features(*x, months),
+             (fx, cpi, rate, money, ip), (fx2, cpi2, rate2, money2, ip2)),
+        ):
+            F1, F2 = build(*a), build(*b)
+            for k in F1:
+                x1, x2 = F1[k][:, :t + 1], F2[k][:, :t + 1]
+                assert np.array_equal(np.isnan(x1), np.isnan(x2)), (ym, k)
+                assert np.allclose(x1[~np.isnan(x1)], x2[~np.isnan(x2)]), (ym, k)
+
+
+def test_bootstrap_index_uniform_within_pool():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "monthly"))
+    import bootstrap as bs
+    rng = np.random.default_rng(3)
+    pool_len = 356
+    idx = np.concatenate([bs.stationary_bootstrap_index(452, pool_len, 12, rng) for _ in range(400)])
+    assert idx.min() >= 0 and idx.max() < pool_len
+    freq = np.bincount(idx, minlength=pool_len) / len(idx)
+    assert freq.max() / freq.min() < 1.3  # 各位置機率大致相同（原實作前段約 2 倍）
+
+
 def test_clark_west_zero_forecast_equals_zero_stat():
     y = np.random.default_rng(1).normal(size=200)
     t, p = mfx.clark_west(y, np.zeros_like(y), lag=3)

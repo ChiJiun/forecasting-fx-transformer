@@ -1,9 +1,11 @@
 """從學長 FX-predect-v2 專案的 Datastream 原始檔抽出月頻面板，寫到 data/monthly/。
 
-輸出三個寬表（index = 參考月份 YYYY-MM，欄 = 11 個貨幣單位 + us）：
+輸出寬表（index = 參考月份 YYYY-MM，欄 = 11 個貨幣單位 + us）：
   fx.csv    匯率（外幣 / 1 美元），**該月月初（約第 2 天）的單點取值**
   cpi.csv   CPI 指數，參考月份 = 物價所屬月份（尚未處理發布延遲）
   rate.csv  3 個月期短率（年化 %），參考月份 = 該月的值（尚未處理發布延遲）
+  money.csv 貨幣量（M1 或 M0，見 MONEY_PREFIX），僅 MACRO_SUBSET + us
+  ip.csv    工業生產指數，僅 MACRO_SUBSET + us
 
 發布延遲在 experiments/monthly/mfx.py 的 RELEASE_LAG 處理，這裡只對齊參考月份。
 
@@ -71,6 +73,34 @@ RATE_COLS = {
 }
 
 
+# 貨幣模型／含產出缺口的 Taylor rule 只在貨幣量與 IP 水準值都可得的子集上做（MACRO_SUBSET）。
+# 貨幣量依各國可得性：日、韓、台、美為 M1，英國、瑞典只有 M0（窄貨幣）。
+# 美國 M1 在 2020-05 重新定義（log 跳 1.2），在 mfx.py 以接合處理；原始值在此不改。
+MONEY_PREFIX = {
+    "japan": "JP MONEY SUPPLY: M1",
+    "south_korea": "KO MONEY SUPPLY - M1",
+    "taiwan": "TW MONEY SUPPLY - M1A",
+    "uk": "UK MONEY SUPPLY M0",
+    "sweden": "SD MONEY SUPPLY - M0",
+    "us": "US MONEY SUPPLY M1 CURN",
+}
+IP_PREFIX = {
+    "japan": "JP INDUSTRIAL PRODUCTION - MINING & MANUFACTURING",
+    "south_korea": "KO INDUSTRIAL PRODUCTION VOLA",
+    "taiwan": "TW INDUSTRIAL PRODUCTION INDEX VOLA",
+    "uk": "UK INDUSTRIAL PRODUCTION INDEX - MANUFACTURING",
+    "sweden": "SD INDUSTRIAL PRODUCTION - MINING & MANUFACTURING",
+    "us": "US INDUSTRIAL PRODUCTION - TOTAL INDEX",
+}
+
+
+def _by_prefix(df, prefix):
+    hits = [c for c in df.columns if c.startswith(prefix) and "%YOY" not in c.upper()]
+    if len(hits) != 1:
+        raise ValueError(f"欄位前綴 {prefix!r} 對到 {hits}")
+    return hits[0]
+
+
 def _month_index(s):
     return pd.to_datetime(s.astype(str).str.replace("/", "-"), format="mixed").dt.to_period("M")
 
@@ -104,6 +134,8 @@ def build(src):
         print(f"合成歐元 vs 真實歐元：重疊 {both.sum()} 月，最大相對差 {rel.max():.4%}")
 
     cpi = pd.DataFrame({c: feat[col] for c, col in CPI_COLS.items()})
+    money = pd.DataFrame({c: feat[_by_prefix(feat, p)] for c, p in MONEY_PREFIX.items()})
+    ip = pd.DataFrame({c: feat[_by_prefix(feat, p)] for c, p in IP_PREFIX.items()})
 
     rate = {}
     for c, cols in RATE_COLS.items():
@@ -117,7 +149,7 @@ def build(src):
 
     idx = pd.period_range("1986-01", "2023-10", freq="M")
     out = {}
-    for name, df in (("fx", fx), ("cpi", cpi), ("rate", rate)):
+    for name, df in (("fx", fx), ("cpi", cpi), ("rate", rate), ("money", money), ("ip", ip)):
         df = df.reindex(idx).astype(float)
         df.index = df.index.astype(str)
         df.index.name = "month"

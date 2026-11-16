@@ -4,6 +4,7 @@
 輸出 experiments/results_monthly/bootstrap_ppp.csv
 
 用法：python experiments/monthly/run_bootstrap.py [--reps 499] [--smoke]
+三種 DGP 設定（區塊 12、區塊 12 去除報酬平均、區塊 36）的結果合併輸出，欄位 config 區分。
 """
 import argparse
 import time
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 import mfx
 import bootstrap as bs
@@ -33,7 +35,6 @@ def masks_from(forecasts, model_list, N, T, horizons):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=499)
-    ap.add_argument("--block", type=float, default=12)
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args()
     reps = 20 if args.smoke else args.reps
@@ -52,12 +53,12 @@ def main():
     samples = {"main": masks_from(main_fc, main_models, N, T, horizons),
                "ppp_long": masks_from(long_fc, long_models, N, T, horizons)}
 
-    # ---- 實際資料：快速版需與原版預測一致（ppp_each / ppp_panel / ppp_calib_hl36_noinfl）
+    # ---- 實際資料：快速版需與原版預測一致
     for h in horizons:
         y = mfx.targets(s, h)
         fast = bs.fast_forecasts(F["z"], y, h)
         g = main_fc[main_fc.h == h]
-        for name in ("ppp_each", "ppp_panel", "ppp_calib_hl36_noinfl"):
+        for name in ("ppp_each", "ppp_panel", "ppp_calib_hl36_noinfl", "ppp_calib_hl60_noinfl"):
             gi = g[g.model == name]
             diff = np.abs(fast[name][gi.nation.values, gi.t.values] - gi.yhat.values)
             assert np.nanmax(diff) < 1e-9 and not np.isnan(diff).any(), (name, h, np.nanmax(diff))
@@ -71,37 +72,44 @@ def main():
             for name in MODELS:
                 actual[(samp, h, name)] = bs.panel_stats(y, fast[name], masks[h], h)
 
-    rng = np.random.default_rng(20261116)
-    sims = {k: [] for k in actual}
-    t0 = time.time()
-    for r in range(reps):
-        s_b = bs.simulate_s(s, rng, args.block)
-        z_b = pdiff - s_b
-        for h in horizons:
-            y_b = mfx.targets(s_b, h)
-            fast = bs.fast_forecasts(z_b, y_b, h)
-            for samp, masks in samples.items():
-                for name in MODELS:
-                    sims[(samp, h, name)].append(bs.panel_stats(y_b, fast[name], masks[h], h))
-        if (r + 1) % 50 == 0:
-            print(f"  {r+1}/{reps} ({time.time()-t0:.0f}s)", flush=True)
-
+    # 三種 DGP 設定（敏感度）：區塊 12 個月；區塊 12 且去除報酬平均（無漂移）；區塊 36 個月
+    configs = [("block12", 12, False), ("block12_demean", 12, True), ("block36", 36, False)]
+    if args.smoke:
+        configs = configs[:1]
     rows = []
-    for (samp, h, name), (ratio, cw_t) in actual.items():
-        sim = np.array(sims[(samp, h, name)])
-        rows.append({"sample": samp, "h": h, "model": name,
-                     "rmse_ratio": ratio, "cw_t": cw_t,
-                     "boot_p_ratio": float((sim[:, 0] <= ratio).mean()),
-                     "boot_p_cw": float((sim[:, 1] >= cw_t).mean()),
-                     "asym_p_cw": float(1 - __import__("scipy.stats").stats.norm.cdf(cw_t)),
-                     "null_ratio_p05": float(np.quantile(sim[:, 0], 0.05)),
-                     "null_ratio_median": float(np.median(sim[:, 0])),
-                     "null_cw_p95": float(np.quantile(sim[:, 1], 0.95)),
-                     "reps": reps})
-    df = pd.DataFrame(rows).sort_values(["sample", "h", "rmse_ratio"])
+    for ci, (cname, block, demean) in enumerate(configs):
+        rng = np.random.default_rng(20261116 + ci)
+        sims = {k: [] for k in actual}
+        t0 = time.time()
+        for r in range(reps):
+            s_b = bs.simulate_s(s, rng, block, demean)
+            z_b = pdiff - s_b
+            for h in horizons:
+                y_b = mfx.targets(s_b, h)
+                fast = bs.fast_forecasts(z_b, y_b, h)
+                for samp, masks in samples.items():
+                    for name in MODELS:
+                        sims[(samp, h, name)].append(bs.panel_stats(y_b, fast[name], masks[h], h))
+            if (r + 1) % 100 == 0:
+                print(f"  [{cname}] {r+1}/{reps} ({time.time()-t0:.0f}s)", flush=True)
+        for (samp, h, name), (ratio, cw_t, dm_t) in actual.items():
+            sim = np.array(sims[(samp, h, name)])
+            rows.append({"config": cname, "sample": samp, "h": h, "model": name,
+                         "rmse_ratio": ratio, "cw_t": cw_t, "dm_t": dm_t,
+                         "boot_p_ratio": float((sim[:, 0] <= ratio).mean()),
+                         "boot_p_cw": float((sim[:, 1] >= cw_t).mean()),
+                         "boot_p_dm": float((sim[:, 2] >= dm_t).mean()),
+                         "asym_p_cw": float(stats.norm.sf(cw_t)),
+                         "asym_p_dm": float(stats.norm.sf(dm_t)),
+                         "null_ratio_p05": float(np.quantile(sim[:, 0], 0.05)),
+                         "null_ratio_median": float(np.median(sim[:, 0])),
+                         "null_cw_p95": float(np.quantile(sim[:, 1], 0.95)),
+                         "null_dm_p95": float(np.quantile(sim[:, 2], 0.95)),
+                         "reps": reps})
+    df = pd.DataFrame(rows).sort_values(["config", "sample", "h", "rmse_ratio"])
     tag = "_smoke" if args.smoke else ""
     df.to_csv(OUT / f"bootstrap_ppp{tag}.csv", index=False)
-    with pd.option_context("display.width", 200):
+    with pd.option_context("display.width", 250, "display.max_rows", 200):
         print(df.to_string(index=False, float_format="%.3f"))
 
 

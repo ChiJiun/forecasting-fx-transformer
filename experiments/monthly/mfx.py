@@ -23,7 +23,14 @@ CURRENCIES = ["australia", "canada", "denmark", "eurozone", "japan", "south_kore
 #   CPI：多數國家在次月中旬發布 → t 月月初最新的是 t-2 月；
 #        澳洲 CPI 是季資料（月值由季資料展開），季末後約 4 週發布 → 保守取 4
 #   短率：月度序列不確定是月平均或月底值，一律延後 1 個月（t-1 月的值在 t 月月初已知）
-RELEASE_LAG = {"cpi": 2, "cpi_australia": 4, "rate": 1}
+#   貨幣量、IP：韓國 M1、英國與瑞典 IP 約在參考月份後 6 週發布 → 一律取 t-3
+RELEASE_LAG = {"cpi": 2, "cpi_australia": 4, "rate": 1, "money": 3, "ip": 3}
+
+# 貨幣模型／含產出缺口 Taylor rule 的子集：貨幣量與 IP 水準值都可得的國家
+MACRO_SUBSET = ["japan", "south_korea", "taiwan", "uk", "sweden"]
+# 貨幣量的定義斷點：該月的 log 變動以前 12 個月變動的中位數取代（只用過去資料）
+MONEY_BREAKS = {"us": ["2020-05"]}  # 美國 M1 重新定義，納入儲蓄存款
+GAP_MIN_OBS = 36  # 遞迴二次趨勢至少需要的觀測數
 
 MIN_TRAIN = 60  # 每個貨幣至少 60 筆已實現的訓練樣本才開始預測
 
@@ -67,6 +74,91 @@ def build_features(fx, cpi, rate, currencies=CURRENCIES):
         rd.append((_shift(rate[c].to_numpy(), RELEASE_LAG["rate"]) - r_us) / 100.0)
     pdiff = np.array(z)
     return {"s": s, "z": pdiff - s, "infl_diff": np.array(infl), "rdiff": np.array(rd)}
+
+
+def load_macro(data_dir=DATA):
+    money = pd.read_csv(Path(data_dir) / "money.csv", index_col="month")
+    ip = pd.read_csv(Path(data_dir) / "ip.csv", index_col="month")
+    return money, ip
+
+
+def splice_breaks(logm, months, breaks):
+    """把斷點月份的 log 變動換成前 12 個月變動的中位數，之後的水準整體平移。"""
+    out = logm.copy()
+    for b in breaks:
+        k = int(np.where(months == b)[0][0])
+        d = np.diff(out)
+        prev = d[max(0, k - 13):k - 1]
+        prev = prev[~np.isnan(prev)]
+        jump = d[k - 1] - np.median(prev)
+        out[k:] = out[k:] - jump
+    return out
+
+
+def trailing_mean(a, w):
+    """a[t] -> mean(a[t-w+1..t])，任何缺值則為 NaN（只用過去資料，用來去除季節性）。"""
+    out = np.full_like(a, np.nan, dtype=float)
+    for t in range(w - 1, len(a)):
+        seg = a[t - w + 1:t + 1]
+        if not np.isnan(seg).any():
+            out[t] = seg.mean()
+    return out
+
+
+def recursive_gap(logy, min_obs=GAP_MIN_OBS):
+    """即時產出缺口：在每個 k，用 k 以前（含 k）所有可得值配適二次時間趨勢，取 k 的殘差。
+    輸入應已依發布延遲位移，因此 gap[k] 只用到參考月份 <= k-lag 的 IP。"""
+    out = np.full_like(logy, np.nan, dtype=float)
+    idx = np.where(~np.isnan(logy))[0]
+    for j, k in enumerate(idx):
+        if j + 1 < min_obs:
+            continue
+        x = idx[:j + 1].astype(float)
+        X = np.column_stack([np.ones_like(x), x, x ** 2])
+        beta = np.linalg.lstsq(X, logy[idx[:j + 1]], rcond=None)[0]
+        out[k] = logy[k] - np.array([1.0, k, k ** 2]) @ beta
+    return out
+
+
+def build_macro_features(fx, cpi, rate, money, ip, months, currencies=MACRO_SUBSET):
+    """子集特徵：build_features 的全部欄位，另加
+    z_mon    = [(m - m_us) - (y - y_us)] - s ：彈性價格貨幣模型的基本面偏離（Mark 1995）
+    gap_diff = 產出缺口差（即時二次趨勢殘差），i 國減美國
+    m 為 log 貨幣量的 12 個月移動平均（去季節性），y 為 log IP。"""
+    F = build_features(fx, cpi, rate, currencies)
+    lm, ly = RELEASE_LAG["money"], RELEASE_LAG["ip"]
+
+    def m_series(c):
+        lm_raw = np.log(money[c].to_numpy(dtype=float))
+        if c in MONEY_BREAKS:
+            lm_raw = splice_breaks(lm_raw, months, MONEY_BREAKS[c])
+        return _shift(trailing_mean(lm_raw, 12), lm)
+
+    def y_series(c):
+        return _shift(np.log(ip[c].to_numpy(dtype=float)), ly)
+
+    m_us, y_us = m_series("us"), y_series("us")
+    gap_us = recursive_gap(y_us)
+    zm, gd = [], []
+    for i, c in enumerate(currencies):
+        y_i = y_series(c)
+        zm.append((m_series(c) - m_us) - (y_i - y_us) - F["s"][i])
+        gd.append(recursive_gap(y_i) - gap_us)
+    F["z_mon"] = np.array(zm)
+    F["gap_diff"] = np.array(gd)
+    return F
+
+
+def macro_models():
+    return [
+        RandomWalk(),
+        PPPCalibrated(36, False),
+        PanelFE("taylor_panel", ["infl_diff", "rdiff"]),
+        OLSEach("mon_each", ["z_mon"]),
+        PanelFE("mon_panel", ["z_mon"]),
+        OLSEach("taylor_gap_each", ["infl_diff", "gap_diff", "rdiff"]),
+        PanelFE("taylor_gap_panel", ["infl_diff", "gap_diff", "rdiff"]),
+    ]
 
 
 def targets(s, h):
@@ -234,7 +326,7 @@ def default_models():
     return [
         RandomWalk(), Drift(),
         ppp_e, ppp_p, PPPCalibrated(36, True), PPPCalibrated(36, False),
-        PPPCalibrated(60, True),
+        PPPCalibrated(60, True), PPPCalibrated(60, False),
         UIPTheory(), uip_e, tay_e, tay_p, all_p,
         Combo("combo", [ppp_p, tay_p, uip_e]),
     ]
