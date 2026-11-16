@@ -50,10 +50,15 @@ def main():
     S = []  # markdown 片段
 
     S.append("# 詳盡表現報告\n")
-    S.append("本文件完整記錄所有實驗的表現數據。評估設定：2 個年度測試區間"
+    n_seeds = df.groupby("model")["seed"].nunique()
+    multi = n_seeds[n_seeds > 1]
+    seed_txt = ("、".join(f"{k} 個 seed（{len(g)} 個模型）"
+                          for k, g in multi.groupby(multi).groups.items()) if len(multi) else "無")
+    S.append(f"本文件完整記錄所有實驗的表現數據。評估設定：{len(meta['fold_spans'])} 個年度測試區間"
              f"（{'、'.join(f'{a}~{b}' for a, b in meta['fold_spans'])}）、"
-             f"每區間 {meta['n_test_origins']} 個預測起點（stride 5）× "
-             f"{meta['n_nations']} 條貨幣序列，預測 30 天路徑；神經模型 3 seeds 平均。\n")
+             f"每區間 {meta['n_test_origins']} 個預測起點（stride {meta.get('test_stride', '?')}）× "
+             f"{meta['n_nations']} 條貨幣序列，預測 {meta.get('horizon', 30)} 天路徑；"
+             f"多 seed 模型取平均：{seed_txt}。\n")
     S.append(feat_lag_note(meta) + "\n")
 
     # ---- 1. 總表 ----
@@ -126,7 +131,9 @@ def main():
         S.append("MASE：\n")
         S.append(sdf.pivot(index="alpha", columns="n_lags", values="mase").round(3).to_markdown())
         S.append(f"\n{len(sdf)} 組參數的 MASE 介於 {sdf.mase.min():.3f}–{sdf.mase.max():.3f}，"
-                 "點位結論不依賴超參數。\n")
+                 "點位結論不依賴超參數"
+                 + ("" if meta.get("feat_lag") else "（此網格使用理論特徵，為 feat_lag 修正前的結果）")
+                 + "。\n")
 
     # ---- 7. RW challenge ----
     rwc_p = RESULTS / "rwchal_dm.csv"

@@ -79,7 +79,7 @@ MASE：
 |   100   | 5.008 |  5.008 |  5.008 |  5.008 |
 |  1000   | 5.01  |  5.01  |  5.01  |  5.01  |
 
-全部 20 組參數的 MASE 介於 5.008–5.046，點位結論不依賴特定超參數。
+全部 20 組參數的 MASE 介於 5.008–5.046，點位結論不依賴特定超參數（此網格使用理論特徵，為 feat_lag 修正前的結果）。
 
 ## 超參數調校
 
@@ -90,7 +90,7 @@ MASE：
 為回答「點位預測是否真的無法贏過 RW」，另做了一輪專項實驗，將評估擴至 6 個年度區間（2018-03 ~ 2024-02），並嘗試文獻中曾報告成功的策略（皆在驗證集選參）：
 
 - **Shrinkage 組合** λ·模型+(1−λ)·RW（預測組合文獻的標準工具）
-- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）
+- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）。⚠ 實作誤用 rate_diff 而非 fwd_premium，已提交結果中這項策略實際上沒有測到（見下方已知問題）
 - **美元因子** 跨幣別共同動能（Verdelhan 2018）+ 自身 5/20/60 日動能/反轉
 
 結果（rwchal_dm.csv）：整段路徑 MAE 比最低的是 shrunk_ridge，0.9972（DM p=0.272），h=30 為 0.9910（p=0.096）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），不是 fwd_premium（索引 2），`fwd_bias` 的結果尚待修正後重跑（`combo` 為 shrunk_ridge 與 shrunk_rich 的等權平均，不含 fwd_bias）。另外，已提交的 rwchal_dm.csv 產生於 feat_lag 修正之前，其中使用理論特徵的模型（ridge_feat_6f、shrunk_ridge、ridge_rich、shrunk_rich、combo）不可採信。

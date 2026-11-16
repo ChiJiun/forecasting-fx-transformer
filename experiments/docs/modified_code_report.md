@@ -111,6 +111,7 @@ RandomForestRegressor（n_estimators=100，同原報告預設）與 MLPRegressor
 6 個年度 fold（2018-03 ~ 2024-02），`--stride` 可調（5 → 312 起點；2 → 780 起點）。候選（皆驗證集選參）：
 - `shrunk_ridge`：λ·Ridge+feat + (1−λ)·RW，λ ∈ {0.1..1.0}
 - `fwd_bias`：s + γ(h/30)(F−s)，γ ∈ {−2..2}（γ<0 = Fama 遠期溢價偏誤）
+  > ⚠ 2026-11 更正：程式實際讀取 `ctx_feat[..., 1]`，也就是 rate_diff，而不是 fwd_premium（索引 2）。已提交結果中各 fold 都選了 γ=0，結果等同 RW，所以遠期溢價偏誤實際上還沒測過，要等修正後重跑。
 - `RidgeRich`：再加自身 5/20/60 日動能與**美元因子**（同起點跨幣別平均動能，利用視窗 [origin×nation] 排序 reshape 取均值）
 - `combo`：shrunk 版本等權平均
 
@@ -152,7 +153,7 @@ nations/*.csv
 
 | 面向 | 原始程式 | 修改後 |
 |---|---|---|
-| 測試視窗 | 1 個（最後 30 天） | 104 個起點（主矩陣）/ 780 個（挑戰賽） |
+| 測試視窗 | 1 個（最後 30 天） | 104 個起點（主矩陣）/ 312 個（挑戰賽，已提交結果為 stride 5；`--stride 2` 可增至 780） |
 | 未來共變數 | 洩漏（feat_dynamic_real 進未來視窗） | 全部只用起點當下已知資訊 |
 | 驗證集 | 與訓練重疊、未用於選模 | 獨立區間 + embargo、early stopping + 選 checkpoint |
 | 歐元區 | 7 國重複計算 | 合併為單一序列 |

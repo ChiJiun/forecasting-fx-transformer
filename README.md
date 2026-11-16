@@ -170,10 +170,10 @@ Repo 根目錄另外保留較早期的：
 - Diebold-Mariano test vs Random Walk；
 - 額外 Random Walk challenge：
   - shrinkage forecast combination
-  - forward-premium bias
+  - forward-premium bias（⚠ 2026-11 更正：`rw_challenge.py` 的 `fwd_bias` 誤用 rate_diff（`ctx_feat` 索引 1）而非 fwd_premium，各 fold 驗證集都選 γ=0，結果等同 RW，所以這項策略實際上還沒測過，待修正後重跑）
   - dollar factor
   - momentum / reversal
-  - 更密集 rolling origins
+  - 6 個年度 fold、共 312 個 rolling origins（`--stride` 可調得更密，已提交的結果為 stride 5）
 
 即使擴充 Random Walk challenge，point forecast 仍沒有穩健、顯著擊敗 Random Walk。
 

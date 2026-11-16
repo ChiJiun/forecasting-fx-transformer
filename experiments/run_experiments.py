@@ -96,7 +96,8 @@ def main():
         "n_train_windows": int(train_w["ctx_level"].shape[0]),
         "feat_lag": FEAT_LAG, "dm_loss": "mase",
     }
-    (out / "meta.json").write_text(json.dumps(meta, indent=2))
+    # smoke 另存 meta_smoke.json，避免覆寫正式結果的 meta（報告依 meta 標註 feat_lag）
+    (out / ("meta_smoke.json" if args.smoke else "meta.json")).write_text(json.dumps(meta, indent=2))
 
 
 if __name__ == "__main__":

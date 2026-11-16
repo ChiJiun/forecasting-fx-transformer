@@ -184,7 +184,9 @@ def main():
             sdf.pivot(index="alpha", columns="n_lags", values="mase")
                .round(3).to_markdown(), "",
             f"全部 {len(sdf)} 組參數的 MASE 介於 {sdf.mase.min():.3f}–{sdf.mase.max():.3f}，"
-            "點位結論不依賴特定超參數。\n",
+            "點位結論不依賴特定超參數"
+            + ("" if meta.get("feat_lag") else "（此網格使用理論特徵，為 feat_lag 修正前的結果）")
+            + "。\n",
         ]
 
     per_no = (df.groupby(["model", "nation", "origin"], as_index=False)
@@ -274,7 +276,8 @@ def main():
         "將評估擴至 6 個年度區間（2018-03 ~ 2024-02），"
         "並嘗試文獻中曾報告成功的策略（皆在驗證集選參）：\n",
         "- **Shrinkage 組合** λ·模型+(1−λ)·RW（預測組合文獻的標準工具）",
-        "- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）",
+        "- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）。"
+        "⚠ 實作誤用 rate_diff 而非 fwd_premium，已提交結果中這項策略實際上沒有測到（見下方已知問題）",
         "- **美元因子** 跨幣別共同動能（Verdelhan 2018）+ 自身 5/20/60 日動能/反轉\n",
         rwc_text,
         "## 限制與後續\n",
