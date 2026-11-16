@@ -38,7 +38,7 @@ LABELS = {
     "dlinear_raw_level": "DLinear (raw level)",
     "patchtst": "PatchTST-lite",
     "patchtst_feat": "PatchTST + theory feat.",
-    "hf_transformer": "HF Transformer (原報告模型, 無洩漏)",
+    "hf_transformer": "HF Transformer (原報告模型, 無未來共變數)",
     "chronos_bolt": "Chronos-Bolt (zero-shot)",
     "random_forest": "Random Forest (原報告方法)",
     "random_forest_feat": "Random Forest + theory feat.",

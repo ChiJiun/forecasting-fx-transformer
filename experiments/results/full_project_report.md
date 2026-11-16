@@ -91,7 +91,7 @@
 ## 5. 實驗歷程（三輪迭代）
 
 - **第 1 輪**：建框架 + 10 模型 × 52 起點 × 17 國（尚未去重）。發現：無模型顯著贏 RW；歐元區重複問題浮現。
-- **第 2 輪**：歐元去重、擴為 2 個年度區間、HF Transformer 無洩漏重測、Chronos 零樣本。核心發現成形。
+- **第 2 輪**：歐元去重、擴為 2 個年度區間、HF Transformer 無未來共變數重測、Chronos 零樣本。核心發現成形。
 - **第 3 輪**：超參數調校（每 fold 用自身驗證區間 grid search，測試集只評選出的配置）+ 全網格敏感度分析。確認所有結論對超參數穩健。
 
 ---
@@ -111,7 +111,7 @@
 | DLinear | 5.147 | 0.026（顯著**較差**） |
 | NLinear | 5.158 | 0.020（顯著較差） |
 | Chronos-Bolt 零樣本 | 5.589 | 0.052（較差） |
-| HF Transformer（原模型，無洩漏） | 6.190 | 0.024（顯著**較差**） |
+| HF Transformer（原模型，無未來共變數） | 6.190 | 0.024（顯著**較差**） |
 | NLinear + 特徵（消融） | 6.325 | <0.001（顯著較差） |
 | DLinear raw level（消融） | 7.061 | <10⁻¹³（顯著較差） |
 
@@ -150,7 +150,7 @@ experiments/
 │   ├── models.py          # 全部模型（統一 fit/predict 介面）
 │   └── backtest.py        # 指標、DM 檢定
 ├── run_experiments.py     # 主實驗矩陣（python experiments/run_experiments.py）
-├── hf_transformer_exp.py  # 原報告模型無洩漏重測
+├── hf_transformer_exp.py  # 原報告模型無未來共變數重測
 ├── chronos_exp.py         # Chronos-Bolt 零樣本
 ├── tune_experiments.py    # 超參數調校 + 敏感度
 ├── make_report.py         # 彙整結果、產圖、寫 report.md

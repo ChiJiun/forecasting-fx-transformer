@@ -1,4 +1,4 @@
-"""原報告的 HF TimeSeriesTransformer，以無洩漏設定接進 rolling backtest。
+"""原報告的 HF TimeSeriesTransformer，以不使用未來共變數與理論特徵的設定接進 rolling backtest。
 
 與原 transformer.py 的差異：
 - 不把未來 FFX/利率餵給模型（num_dynamic_real_features=0；時間特徵只有日曆與 age，

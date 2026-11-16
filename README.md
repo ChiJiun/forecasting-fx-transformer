@@ -155,7 +155,7 @@ Repo 根目錄另外保留較早期的：
 5. **No formal significance tests**
    早期只比較平均誤差，無法判斷差異是否只是抽樣波動。
 
-因此最終研究改採 leakage-free rolling-origin backtest，並增加統計檢定與 robustness analysis。
+因此最終研究改採沒有未來共變數的 rolling-origin backtest，並增加統計檢定與 robustness analysis（之後另外發現遠期匯率有時間戳洩漏，見下方 Extension Experiments；現行程式以 `feat_lag=1` 修正）。
 
 ---
 
@@ -196,12 +196,12 @@ Repo 根目錄另外保留較早期的：
 │
 └── experiments/
     ├── fxlib/
-    │   ├── data.py                  # leakage-free data / features
+    │   ├── data.py                  # data / features（feat_lag=1 修正遠期匯率時間戳洩漏）
     │   ├── models.py                # 統一模型介面
     │   └── backtest.py              # metrics / DM test
     ├── run_experiments.py           # 主 rolling-origin 實驗
     ├── sklearn_exp.py               # Random Forest / MLP
-    ├── hf_transformer_exp.py        # HF Transformer 無洩漏重測
+    ├── hf_transformer_exp.py        # HF Transformer 無未來共變數重測
     ├── chronos_exp.py               # Chronos-Bolt zero-shot
     ├── tune_experiments.py          # validation-based tuning
     ├── rw_challenge.py              # Random Walk 專項挑戰
@@ -226,7 +226,7 @@ Repo 根目錄另外保留較早期的：
 **重要：延伸實驗發現兩個會影響上方 Final Results 的問題**（詳見 [`experiments/docs/extension_report.md`](experiments/docs/extension_report.md) §0）：
 
 1. **遠期匯率時間戳洩漏**。AUD、CAD、DKK、JPY、NOK、CHF、GBP 七個貨幣的 FFX（RFV 來源）取價時間晚於 WM/R 即期定盤，`fwd_premium` 因此含有次日即期報酬的資訊（與次日報酬相關 0.43–0.51）。這對點位 MASE 影響很小（Ridge + 理論特徵與無特徵版差距 <0.5%），但使用 `fwd_premium` 的任何結果都應以 `ext_leak_check.py` 的 `feat_lag1` 版本為準。
-2. **合併 DM 檢定以 level 單位 MAE 計算**，KRW 佔合併 MAE 的 86%。尺度無關（MASE）版本見 `experiments/results_ext/existing_vs_rw_scalefree.csv`；「無模型顯著優於 Random Walk」的結論不變。
+2. **合併 DM 檢定以 level 單位 MAE 計算**，KRW 佔合併 MAE 的 86%（現行 `summarize` 已改以 MASE 為 `dm_p` 的損失）。尺度無關（MASE）版本見 `experiments/results_ext/existing_vs_rw_scalefree.csv`；「無模型顯著優於 Random Walk」的結論不變。
 
 延伸實驗本身的結論：三個問題都**沒有**產生穩健優於 Random Walk 的點位預測；唯一的跨貨幣效果只在 KRW/TWD（定盤時間落後 G10 所致），其餘貨幣為零。各模型適合的資料類型、優缺點與架構解釋見 [`experiments/docs/model_comparison.md`](experiments/docs/model_comparison.md)。
 
@@ -319,7 +319,7 @@ Smoke test 涵蓋：
 
 目前結果仍有以下限制：
 
-- 主表的 DM 檢定以 level MAE 合併，高價位貨幣（KRW）權重過大；尺度無關版本見 `experiments/results_ext/existing_vs_rw_scalefree.csv`。
+- 上方 Final Results 主表的 DM 檢定以 level MAE 合併（2026-08 產生），高價位貨幣（KRW）權重過大；現行 `summarize` 已改以 MASE 為損失；尺度無關版本見 `experiments/results_ext/existing_vs_rw_scalefree.csv`。
 - 7 個貨幣的遠期匯率有時間戳洩漏（見上方 Extension Experiments）。
 - Chronos 的預訓練資料可能包含部分金融時間序列，因此 zero-shot 結果僅作 baseline。
 - 本研究結果不支持「穩健的 point-forecast superiority」。

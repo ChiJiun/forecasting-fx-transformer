@@ -64,8 +64,8 @@
 
 以下數字由上方總表動態產生（DM 以 MASE 為損失）。
 
-1. **點位誤差**：沒有任何模型在 5% 水準顯著優於 Random Walk。MASE 最低的是 Ridge + theory feat.（MASE 比 0.993，DM p=0.336）。在 5% 水準顯著**差於** RW 的模型：MLP + theory feat.（MASE 比 1.017，p=0.037）、DLinear（MASE 比 1.021，p=0.035）、NLinear（MASE 比 1.023，p=0.025）、Chronos-Bolt (zero-shot)（MASE 比 1.109，p=0.032）、HF Transformer (原報告模型, 無洩漏)（MASE 比 1.228，p=0.006）、NLinear + theory feat.（MASE 比 1.255，p<0.001）、DLinear (raw level)（MASE 比 1.401，p<0.001）；0.05–0.10 之間差於 RW 的模型：PatchTST + theory feat.（MASE 比 1.063，p=0.091）、RW + drift（MASE 比 1.102，p=0.061）。（DM 以 MASE 為損失、雙尾檢定。）
-2. **原報告模型、零樣本模型與消融**：HF Transformer (原報告模型, 無洩漏) MASE 比 1.228（DM p=0.006）；Chronos-Bolt (zero-shot) MASE 比 1.109（DM p=0.032）；DLinear (raw level) MASE 比 1.401（DM p<0.001）；NLinear + theory feat. MASE 比 1.255（DM p<0.001）。
+1. **點位誤差**：沒有任何模型在 5% 水準顯著優於 Random Walk。MASE 最低的是 Ridge + theory feat.（MASE 比 0.993，DM p=0.336）。在 5% 水準顯著**差於** RW 的模型：MLP + theory feat.（MASE 比 1.017，p=0.037）、DLinear（MASE 比 1.021，p=0.035）、NLinear（MASE 比 1.023，p=0.025）、Chronos-Bolt (zero-shot)（MASE 比 1.109，p=0.032）、HF Transformer (原報告模型, 無未來共變數)（MASE 比 1.228，p=0.006）、NLinear + theory feat.（MASE 比 1.255，p<0.001）、DLinear (raw level)（MASE 比 1.401，p<0.001）；0.05–0.10 之間差於 RW 的模型：PatchTST + theory feat.（MASE 比 1.063，p=0.091）、RW + drift（MASE 比 1.102，p=0.061）。（DM 以 MASE 為損失、雙尾檢定。）
+2. **原報告模型、零樣本模型與消融**：HF Transformer (原報告模型, 無未來共變數) MASE 比 1.228（DM p=0.006）；Chronos-Bolt (zero-shot) MASE 比 1.109（DM p=0.032）；DLinear (raw level) MASE 比 1.401（DM p<0.001）；NLinear + theory feat. MASE 比 1.255（DM p<0.001）。
 
 ## 敏感度分析：Ridge + 理論特徵（α × 落後期全網格）
 
