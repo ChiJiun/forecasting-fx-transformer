@@ -2,7 +2,7 @@
 
 本文件完整記錄所有實驗的表現數據。評估設定：2 個年度測試區間（2023-03-03~2024-02-23、2022-03-04~2023-02-24）、每區間 52 個預測起點（stride 5）× 11 條貨幣序列，預測 30 天路徑；神經模型 3 seeds 平均。
 
-**注意：本結果產生時理論特徵未延後（feat_lag=0）**。AUD/CAD/DKK/JPY/NOK/CHF/GBP 的遠期匯率取價晚於即期定盤，`fwd_premium` 含次日即期報酬資訊，帶 `_feat` 的結果不可採信（見 docs/extension_report.md §0）。目前 `load_panel` 預設 feat_lag=1，重跑實驗即可得到修正後的結果。
+**注意：本結果產生時理論特徵未延後（feat_lag=0）**。AUD/CAD/DKK/JPY/NOK/CHF/GBP 的遠期匯率取價晚於即期定盤，`fwd_premium` 含次日即期報酬資訊，所有使用理論特徵的模型結果都不可採信，包括帶 `_feat` 的模型、選中 use_feats=True 的 tuned_ridge、Ridge + 理論特徵的敏感度網格，以及 rw_challenge 的 ridge 系列（見 docs/extension_report.md §0）。目前 `load_panel` 預設 feat_lag=1，重跑實驗即可得到修正後的結果。
 
 ## 1. 模型總表（20 個變體，依 MASE 排序）
 
@@ -148,7 +148,8 @@ MASE：
 
 - `*_ratio`：該模型 MAE / RW MAE（<1 為優）；`*_p`：DM p 值。**注意：本節（rw_challenge.py）的 DM 以 level MAE／level 絕對誤差為損失，KRW 等高價位貨幣權重大，與第 1 節的 MASE 版 dm_p 不同**
 - 整段路徑 MAE 比最低的是 shrunk_ridge：0.9972（p=0.272）、h=30 為 0.9910（p=0.096）
-- 已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），不是 fwd_premium（索引 2）；`fwd_bias` 以及以它和 shrunk_ridge 等權平均的 `combo` 結果都受影響，尚待修正後重跑
+- 已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），不是 fwd_premium（索引 2），`fwd_bias` 的結果尚待修正後重跑（`combo` 為 shrunk_ridge 與 shrunk_rich 的等權平均，不含 fwd_bias）
+- 已提交的 rwchal_dm.csv 產生於 feat_lag 修正之前，其中使用理論特徵的模型（ridge_feat_6f、shrunk_ridge、ridge_rich、shrunk_rich、combo）不可採信
 
 ## 8. 原報告模型與零樣本模型明細
 

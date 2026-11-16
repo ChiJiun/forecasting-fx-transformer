@@ -141,8 +141,10 @@ def main():
                  f"- 整段路徑 MAE 比最低的是 {b.model}：{b.path_ratio:.4f}（{pstr(b.path_p)}）、"
                  f"h=30 為 {b.h30_ratio:.4f}（{pstr(b.h30_p)}）\n"
                  "- 已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
-                 "不是 fwd_premium（索引 2）；`fwd_bias` 以及以它和 shrunk_ridge 等權平均的 "
-                 "`combo` 結果都受影響，尚待修正後重跑\n")
+                 "不是 fwd_premium（索引 2），`fwd_bias` 的結果尚待修正後重跑"
+                 "（`combo` 為 shrunk_ridge 與 shrunk_rich 的等權平均，不含 fwd_bias）\n"
+                 "- 已提交的 rwchal_dm.csv 產生於 feat_lag 修正之前，其中使用理論特徵的模型"
+                 "（ridge_feat_6f、shrunk_ridge、ridge_rich、shrunk_rich、combo）不可採信\n")
 
     # ---- 8. HF / Chronos 明細 ----
     S.append("## 8. 原報告模型與零樣本模型明細\n")

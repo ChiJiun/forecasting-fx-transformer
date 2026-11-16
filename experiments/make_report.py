@@ -228,8 +228,11 @@ def main():
                     f"（{pstr(b.h30_p)}）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，"
                     "KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**"
                     "已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
-                    "不是 fwd_premium（索引 2）；`fwd_bias` 以及以它和 shrunk_ridge 等權平均的 "
-                    "`combo` 結果都受影響，尚待修正後重跑。\n")
+                    "不是 fwd_premium（索引 2），`fwd_bias` 的結果尚待修正後重跑"
+                    "（`combo` 為 shrunk_ridge 與 shrunk_rich 的等權平均，不含 fwd_bias）。"
+                    "另外，已提交的 rwchal_dm.csv 產生於 feat_lag 修正之前，"
+                    "其中使用理論特徵的模型（ridge_feat_6f、shrunk_ridge、ridge_rich、shrunk_rich、combo）"
+                    "不可採信。\n")
     else:
         rwc_text = "（找不到 rwchal_dm.csv，略過本節結果。）\n"
 

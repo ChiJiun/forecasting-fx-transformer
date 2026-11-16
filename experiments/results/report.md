@@ -4,7 +4,7 @@
 
 - **Rolling-origin 回測**：原報告只用單一一個 30 天測試視窗；本實驗改用 2 個年度測試區間（2023-03-03 ~ 2024-02-23、2022-03-04 ~ 2023-02-24），每區間 52 個預測起點（每 5 個交易日一個）× 11 條貨幣序列，每個區間各自重訓，並以 Diebold-Mariano 檢定（HAC 變異數 + HLN 小樣本修正）判斷是否顯著優於 Random Walk。
 - **歐元區去重**：原資料 17 國中有 7 國（austria/belgium/finland/france/germany/italy/spain）1999 年後是同一條歐元序列（日報酬率完全相同，僅差固定舊幣換算比率），已合併為單一 eurozone 序列，避免評估被歐元重複加權 7 倍。
-- **修正資料洩漏**：原程式把預測視窗內的未來遠期匯率與未來利率餵給模型（HF TimeSeriesTransformer 的 `feat_dynamic_real` 會進 `future_time_features`）；本實驗所有模型（包含重測的 HF Transformer）不再使用預測視窗內的未來共變數。**注意：本結果產生時理論特徵未延後（feat_lag=0）**。AUD/CAD/DKK/JPY/NOK/CHF/GBP 的遠期匯率取價晚於即期定盤，`fwd_premium` 含次日即期報酬資訊，帶 `_feat` 的結果不可採信（見 docs/extension_report.md §0）。目前 `load_panel` 預設 feat_lag=1，重跑實驗即可得到修正後的結果。
+- **修正資料洩漏**：原程式把預測視窗內的未來遠期匯率與未來利率餵給模型（HF TimeSeriesTransformer 的 `feat_dynamic_real` 會進 `future_time_features`）；本實驗所有模型（包含重測的 HF Transformer）不再使用預測視窗內的未來共變數。**注意：本結果產生時理論特徵未延後（feat_lag=0）**。AUD/CAD/DKK/JPY/NOK/CHF/GBP 的遠期匯率取價晚於即期定盤，`fwd_premium` 含次日即期報酬資訊，所有使用理論特徵的模型結果都不可採信，包括帶 `_feat` 的模型、選中 use_feats=True 的 tuned_ridge、Ridge + 理論特徵的敏感度網格，以及 rw_challenge 的 ridge 系列（見 docs/extension_report.md §0）。目前 `load_panel` 預設 feat_lag=1，重跑實驗即可得到修正後的結果。
 - **訓練流程**：early stopping（驗證集與測試區間隔 30 天 embargo）、神經模型多 seeds 平均、log-level instance normalization。
 
 ## 模型總表
@@ -93,7 +93,7 @@ MASE：
 - **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）
 - **美元因子** 跨幣別共同動能（Verdelhan 2018）+ 自身 5/20/60 日動能/反轉
 
-結果（rwchal_dm.csv）：整段路徑 MAE 比最低的是 shrunk_ridge，0.9972（DM p=0.272），h=30 為 0.9910（p=0.096）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），不是 fwd_premium（索引 2）；`fwd_bias` 以及以它和 shrunk_ridge 等權平均的 `combo` 結果都受影響，尚待修正後重跑。
+結果（rwchal_dm.csv）：整段路徑 MAE 比最低的是 shrunk_ridge，0.9972（DM p=0.272），h=30 為 0.9910（p=0.096）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），不是 fwd_premium（索引 2），`fwd_bias` 的結果尚待修正後重跑（`combo` 為 shrunk_ridge 與 shrunk_rich 的等權平均，不含 fwd_bias）。另外，已提交的 rwchal_dm.csv 產生於 feat_lag 修正之前，其中使用理論特徵的模型（ridge_feat_6f、shrunk_ridge、ridge_rich、shrunk_rich、combo）不可採信。
 
 ## 限制與後續
 

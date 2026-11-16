@@ -60,7 +60,9 @@ def feat_lag_note(meta):
     if lag is None or lag == 0:
         return ("**注意：本結果產生時理論特徵未延後（feat_lag=0）**。AUD/CAD/DKK/JPY/NOK/CHF/GBP "
                 "的遠期匯率取價晚於即期定盤，`fwd_premium` 含次日即期報酬資訊，"
-                "帶 `_feat` 的結果不可採信（見 docs/extension_report.md §0）。"
+                "所有使用理論特徵的模型結果都不可採信，包括帶 `_feat` 的模型、"
+                "選中 use_feats=True 的 tuned_ridge、Ridge + 理論特徵的敏感度網格，"
+                "以及 rw_challenge 的 ridge 系列（見 docs/extension_report.md §0）。"
                 "目前 `load_panel` 預設 feat_lag=1，重跑實驗即可得到修正後的結果。")
     return (f"理論特徵延後 {lag} 個交易日（feat_lag={lag}），"
             "避免遠期匯率取價晚於即期定盤造成的時間戳洩漏（見 docs/extension_report.md §0）。")
