@@ -124,6 +124,37 @@ def fig_horizon(per_no, models, path, col_tpl="abserr_h{h}", ylabel="平均絕�
     plt.close(fig)
 
 
+TUNED_PAIRS = {"tuned_ridge": "ridge_returns_feat", "tuned_nlinear": "nlinear",
+               "tuned_dlinear": "dlinear", "tuned_patchtst": "patchtst"}
+
+
+def tuning_text(summary, cfg_path, meta):
+    """調參段落：數字全部來自 summary 與 chosen_configs.json。"""
+    m = summary.set_index("model")
+    diffs = [(LABELS.get(t, t), LABELS.get(b, b), m.loc[t, "mase"] - m.loc[b, "mase"])
+             for t, b in TUNED_PAIRS.items() if t in m.index and b in m.index]
+    parts = []
+    if diffs:
+        parts.append("調參後 MASE 相對原設定的變動：" + "、".join(
+            f"{n} 對 {b} {d:+.3f}" for n, b, d in diffs) + "。")
+    tuned_sig = [LABELS.get(t, t) for t in TUNED_PAIRS
+                 if t in m.index and m.loc[t, "dm_stat"] < 0 and m.loc[t, "dm_p"] < 0.05]
+    parts.append("調參後的模型中，" + (
+        "在 5% 水準顯著優於 Random Walk 的有：" + "、".join(tuned_sig) if tuned_sig
+        else "沒有任何一個在 5% 水準顯著優於 Random Walk") + "。")
+    if cfg_path.exists():
+        cc = json.loads(cfg_path.read_text())
+        ridge = {k: v.get("use_feats") for k, v in cc.items() if k.endswith("_ridge")}
+        if ridge:
+            parts.append("Ridge 各 fold 選出的 use_feats：" + "、".join(
+                f"{k.split('_')[0]}={v}" for k, v in sorted(ridge.items())) + "。")
+            if any(ridge.values()) and not meta.get("feat_lag"):
+                parts.append("（本結果產生時理論特徵未延後，選中理論特徵可能反映時間戳洩漏，"
+                             "不能據此判斷理論特徵有用。）")
+    parts.append("詳見 chosen_configs.json。")
+    return "".join(parts)
+
+
 def main():
     frames = [pd.read_csv(RESULTS / "raw.csv")]
     for extra in ("raw_hf.csv", "raw_chronos.csv", "raw_tuned.csv", "raw_sklearn.csv"):
@@ -186,6 +217,8 @@ def main():
     if not focus_lines:
         focus_lines = ["（本次結果不含這些模型）"]
 
+    tune_text = tuning_text(summary, RESULTS / "chosen_configs.json", meta)
+
     rwc_p = RESULTS / "rwchal_dm.csv"
     if rwc_p.exists():
         rwc = pd.read_csv(rwc_p)
@@ -195,7 +228,8 @@ def main():
                     f"（{pstr(b.h30_p)}）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，"
                     "KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**"
                     "已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
-                    "不是 fwd_premium（索引 2），遠期偏誤的結果尚待修正後重跑。\n")
+                    "不是 fwd_premium（索引 2）；`fwd_bias` 以及以它和 shrunk_ridge 等權平均的 "
+                    "`combo` 結果都受影響，尚待修正後重跑。\n")
     else:
         rwc_text = "（找不到 rwchal_dm.csv，略過本節結果。）\n"
 
@@ -231,9 +265,7 @@ def main():
         "## 超參數調校\n",
         "所有可調模型均以每個 fold 自身的驗證區間（測試前 250 天、30 天 embargo）"
         "做 grid search 選參，測試集只評估選出的配置（表中 `tuned_*`）。"
-        "調參後各模型 MASE 變動皆在 ±0.1 內，點位仍無法顯著贏過 Random Walk，"
-        "且兩個 fold 各自選出的 Ridge 都包含理論特徵（use_feats=True）——"
-        "調參不改變任何主要結論（詳見 chosen_configs.json）。\n",
+        + tune_text + "\n",
         "## 挑戰 Random Walk：文獻導向的專項嘗試（rw_challenge.py）\n",
         "為回答「點位預測是否真的無法贏過 RW」，另做了一輪專項實驗，"
         "將評估擴至 6 個年度區間（2018-03 ~ 2024-02），"

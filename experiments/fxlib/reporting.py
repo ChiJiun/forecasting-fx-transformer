@@ -17,6 +17,8 @@ def dm_findings(summary, labels, baseline="random_walk", alpha=0.05, marginal=0.
     （各為 [(label, mase_ratio, dm_p), ...]）。"""
     lab = lambda m: labels.get(m, m)  # noqa: E731
     s = summary[summary.model != baseline].sort_values("mase")
+    if s.empty:
+        raise ValueError(f"summary 只有 baseline（{baseline}），沒有可比較的模型")
     best = s.iloc[0]
     pick = lambda mask: [(lab(r.model), r.mase_ratio, r.dm_p)  # noqa: E731
                          for r in s[mask].itertuples()]

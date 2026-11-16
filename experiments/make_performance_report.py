@@ -57,7 +57,7 @@ def main():
     S.append(feat_lag_note(meta) + "\n")
 
     # ---- 1. 總表 ----
-    S.append("## 1. 模型總表（20 個變體，依 MASE 排序）\n")
+    S.append(f"## 1. 模型總表（{len(summary)} 個變體，依 MASE 排序）\n")
     cols = ["model", "mase", "mase_ratio", "smape", "mae", "mse", "mase_std",
             "dm_stat", "dm_p", "mae_dm_p"]
     S.append(lab(summary[cols]).round(4).to_markdown(index=False))
@@ -72,16 +72,21 @@ def main():
     hor = per_no.groupby("model")[[f"abserr_h{h}" for h in (1, 5, 14, 30)]].mean()
     hor["path_mae"] = per_no.groupby("model")["mae"].mean()
     S.append(lab(hor.reset_index()).round(4).to_markdown(index=False))
-    S.append("\n誤差隨視野拉長而增大（h=1 約 0.7、h=30 約 4.0），"
-             "各模型差距相對於誤差本身極小（<1%），呼應點位不可預測的結論。\n")
+    rw_h = hor.loc["random_walk"]
+    S.append(f"\nRandom Walk 的絕對誤差從 h=1 的 {rw_h['abserr_h1']:.3f} 增至 h=30 的 "
+             f"{rw_h['abserr_h30']:.3f}；各模型 h=30 誤差介於 {hor['abserr_h30'].min():.3f}–"
+             f"{hor['abserr_h30'].max():.3f}。此表為 level 尺度，KRW 等高價位貨幣權重大。\n")
 
     # ---- 3. 跨 fold ----
     S.append("## 3. 跨期穩健性（各年度區間 MASE）\n")
     fm = df.groupby(["model", "fold"])["mase"].mean().unstack()
     fm.columns = [f"{meta['fold_spans'][int(c)][0][:7]} 起一年" for c in fm.columns]
     S.append(lab(fm.reset_index()).round(3).to_markdown(index=False))
-    S.append("\nfold 1（2022-03 起，美元急升年）整體 MASE 較高，"
-             "但模型相對排名在兩個 fold 一致。\n")
+    if fm.shape[1] >= 2:
+        rho = fm.rank().corr(method="spearman").iloc[0, 1]
+        hi = fm.mean().idxmax()
+        S.append(f"\n整體平均 MASE 較高的是「{hi}」；兩個區間的模型排名 Spearman 相關為 "
+                 f"{rho:.2f}（1 表示排名完全一致）。\n")
 
     # ---- 4. 各貨幣 ----
     S.append("## 4. 各貨幣 MASE（代表模型）\n")
@@ -90,9 +95,11 @@ def main():
            .groupby(["nation", "model"])["mase"].mean().unstack()[pick])
     nat.columns = [LABELS[c] for c in nat.columns]
     S.append(nat.round(3).to_markdown())
-    S.append("\n北歐與亞洲貨幣（norway、sweden、japan、taiwan、south_korea）"
-             "MASE 較高（波動大），歐元區與瑞郎較低；"
-             "各貨幣上模型間差距均小。\n")
+    rw_nat = nat[LABELS["random_walk"]].sort_values(ascending=False)
+    spread = nat.max(axis=1) - nat.min(axis=1)
+    S.append(f"\nRandom Walk MASE 最高的貨幣：{'、'.join(rw_nat.index[:3])}；"
+             f"最低：{'、'.join(rw_nat.index[-2:])}。各貨幣上這 {len(pick)} 個模型的 MASE "
+             f"最大差距介於 {spread.min():.3f}–{spread.max():.3f}。\n")
 
     # ---- 5. 調參 ----
     S.append("## 5. 超參數調校結果\n")
@@ -101,8 +108,13 @@ def main():
     for k, v in cc.items():
         rows.append({"fold_模型": k, "選中配置": json.dumps(v, ensure_ascii=False)})
     S.append(pd.DataFrame(rows).to_markdown(index=False))
-    S.append("\n選參只用各 fold 自身驗證區間。調參前後 MASE 對比"
-             "（tuned_* vs 原設定，見第 1 節總表）變動皆 <0.1。\n")
+    m = summary.set_index("model")
+    pairs = {"tuned_ridge": "ridge_returns_feat", "tuned_nlinear": "nlinear",
+             "tuned_dlinear": "dlinear", "tuned_patchtst": "patchtst"}
+    diffs = "、".join(f"{LABELS[t]} 對 {LABELS[b]} {m.loc[t, 'mase'] - m.loc[b, 'mase']:+.3f}"
+                      for t, b in pairs.items() if t in m.index and b in m.index)
+    S.append("\n選參只用各 fold 自身驗證區間。調參後 MASE 相對原設定的變動："
+             + (diffs or "（無對照）") + "。\n")
 
     # ---- 6. 敏感度 ----
     sens_p = RESULTS / "raw_sensitivity.csv"
@@ -129,20 +141,26 @@ def main():
                  f"- 整段路徑 MAE 比最低的是 {b.model}：{b.path_ratio:.4f}（{pstr(b.path_p)}）、"
                  f"h=30 為 {b.h30_ratio:.4f}（{pstr(b.h30_p)}）\n"
                  "- 已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
-                 "不是 fwd_premium（索引 2），本節遠期偏誤的結果尚待修正後重跑\n")
+                 "不是 fwd_premium（索引 2）；`fwd_bias` 以及以它和 shrunk_ridge 等權平均的 "
+                 "`combo` 結果都受影響，尚待修正後重跑\n")
 
     # ---- 8. HF / Chronos 明細 ----
     S.append("## 8. 原報告模型與零樣本模型明細\n")
     hf = pd.read_csv(RESULTS / "raw_hf.csv")
     hfd = hf.groupby(["fold", "seed"])[["mase", "smape", "abserr_h30"]].mean().reset_index()
-    S.append("HF TimeSeriesTransformer（無洩漏重測，各 fold × seed）：\n")
+    S.append("HF TimeSeriesTransformer（不使用理論特徵與未來共變數的重測，各 fold × seed）：\n")
     S.append(hfd.round(3).to_markdown(index=False))
     ch = pd.read_csv(RESULTS / "raw_chronos.csv")
     chd = ch.groupby("fold")[["mase", "smape", "abserr_h30"]].mean().reset_index()
     S.append("\nChronos-Bolt（零樣本）：\n")
     S.append(chd.round(3).to_markdown(index=False))
-    S.append("\nHF Transformer 的 seed 間 MASE 變異大（fold 0：4.62 vs 5.27），"
-             "顯示原設定訓練不穩定；兩者點位皆劣於 RW。\n")
+    seed_rng = hfd.groupby("fold")["mase"].agg(["min", "max"])
+    rng_txt = "；".join(f"fold {f}：{r['min']:.2f}–{r['max']:.2f}" for f, r in seed_rng.iterrows())
+    sm = summary.set_index("model")
+    worse = [LABELS[x] for x in ("hf_transformer", "chronos_bolt")
+             if x in sm.index and sm.loc[x, "mase_ratio"] > 1]
+    S.append(f"\nHF Transformer 各 seed 的 MASE 範圍（{rng_txt}）。"
+             + (f"MASE 高於 RW 的：{'、'.join(worse)}。" if worse else "") + "\n")
 
     # ---- 9. 結論 ----
     S.append("## 9. 表現總結\n")

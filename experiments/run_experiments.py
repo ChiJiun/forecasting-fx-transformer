@@ -30,7 +30,7 @@ def main():
 
     L, H = 90, 30
     test_stride = 5
-    n_test_origins = 8 if args.smoke else 52
+    n_test_origins = 12 if args.smoke else 52  # smoke 也需 ≥ MIN_DM_ORIGINS(10) 個起點才能做 DM
     n_folds = 1 if args.smoke else 2
     seeds = 1 if args.smoke else args.seeds
 

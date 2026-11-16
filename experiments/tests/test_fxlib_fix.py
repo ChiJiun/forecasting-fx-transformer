@@ -88,11 +88,18 @@ def test_dm_identical_losses():
     assert dm_test(x, x) == (0.0, 1.0)
 
 
-if __name__ == "__main__":
-    for name, fn in list(globals().items()):
-        if name.startswith("test_"):
-            fn()
-            print("ok", name)
+def test_summarize_smoke_scale():
+    """run_experiments.py --smoke 的起點數必須 ≥ MIN_DM_ORIGINS，summarize 才不會中斷。"""
+    import re
+    from fxlib.backtest import MIN_DM_ORIGINS
+    src = (ROOT / "experiments" / "run_experiments.py").read_text(encoding="utf-8")
+    n_smoke = int(re.search(r"n_test_origins\s*=\s*(\d+)\s+if args\.smoke", src).group(1))
+    assert n_smoke >= MIN_DM_ORIGINS
+    df = _toy_df()
+    s = summarize(df[df.origin < n_smoke]).set_index("model")
+    assert s.loc["model_b", "n_dm_origins"] == n_smoke
+    with pytest.raises(ValueError, match="共同起點"):
+        summarize(df[df.origin < MIN_DM_ORIGINS - 1])
 
 
 def test_reporting_text_follows_summary():
@@ -106,3 +113,13 @@ def test_reporting_text_follows_summary():
     assert pstr(0.0001) == "p<0.001" and pstr(0.21) == "p=0.210"
     assert "未延後" in feat_lag_note({}) and "未延後" in feat_lag_note({"feat_lag": 0})
     assert "延後 1 個交易日" in feat_lag_note({"feat_lag": 1})
+    only_base = s[s.model == "random_walk"]
+    with pytest.raises(ValueError, match="只有 baseline"):
+        dm_findings(only_base, {})
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_"):
+            fn()
+            print("ok", name)
