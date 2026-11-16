@@ -14,6 +14,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fxlib.backtest import summarize
+from fxlib.reporting import dm_summary_text, feat_lag_note, pstr
 
 RESULTS = Path(__file__).parent / "results"
 
@@ -175,6 +176,29 @@ def main():
 
     spans = meta.get("fold_spans", [])
     span_txt = "、".join(f"{a} ~ {b}" for a, b in spans)
+
+    focus_lines = []
+    for m in ("hf_transformer", "chronos_bolt", "dlinear_raw_level", "nlinear_feat"):
+        r = summary[summary.model == m]
+        if len(r):
+            r = r.iloc[0]
+            focus_lines.append(f"{LABELS.get(m, m)} MASE 比 {r.mase_ratio:.3f}（DM {pstr(r.dm_p)}）")
+    if not focus_lines:
+        focus_lines = ["（本次結果不含這些模型）"]
+
+    rwc_p = RESULTS / "rwchal_dm.csv"
+    if rwc_p.exists():
+        rwc = pd.read_csv(rwc_p)
+        b = rwc.sort_values("path_ratio").iloc[0]
+        rwc_text = (f"結果（rwchal_dm.csv）：整段路徑 MAE 比最低的是 {b.model}，"
+                    f"{b.path_ratio:.4f}（DM {pstr(b.path_p)}），h=30 為 {b.h30_ratio:.4f}"
+                    f"（{pstr(b.h30_p)}）。**注意：rw_challenge.py 的 DM 以 level MAE 為損失，"
+                    "KRW 等高價位貨幣權重大，與上方 MASE 版 dm_p 不同。**"
+                    "已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
+                    "不是 fwd_premium（索引 2），遠期偏誤的結果尚待修正後重跑。\n")
+    else:
+        rwc_text = "（找不到 rwchal_dm.csv，略過本節結果。）\n"
+
     lines = [
         "# 匯率預測實驗改善結果（v2）\n",
         "## 評估方法（與原 NSTC 報告的差異）\n",
@@ -188,7 +212,8 @@ def main():
         "已合併為單一 eurozone 序列，避免評估被歐元重複加權 7 倍。",
         "- **修正資料洩漏**：原程式把預測視窗內的未來遠期匯率與未來利率餵給模型"
         "（HF TimeSeriesTransformer 的 `feat_dynamic_real` 會進 `future_time_features`）；"
-        "本實驗所有模型（包含重測的 HF Transformer）只用預測起點當下已知的資訊。",
+        "本實驗所有模型（包含重測的 HF Transformer）不再使用預測視窗內的未來共變數。"
+        + feat_lag_note(meta),
         "- **訓練流程**：early stopping（驗證集與測試區間隔 30 天 embargo）、"
         f"神經模型多 seeds 平均、log-level instance normalization。\n",
         "## 模型總表\n",
@@ -199,20 +224,9 @@ def main():
         "## 跨期穩健性（各 fold MASE）\n",
         fold_mase.round(3).to_markdown(), "",
         "## 主要發現\n",
-        "> 注意：以下內文數字寫於 2026-08，當時 DM 以 level MAE 計算、特徵未延後一天"
-        "（見 docs/extension_report.md §0）；以目前程式重跑後，上方總表的數值會與內文不同。\n",
-        "1. **點位誤差：沒有任何模型顯著贏過 Random Walk。**最佳模型（Ridge + 理論特徵）"
-        "MASE 5.009 vs RW 5.042（DM p=0.21），且兩個年度區間排名一致。"
-        "原報告的 HF TimeSeriesTransformer 在修正洩漏後 MASE 6.19，"
-        "顯著**差於** RW（DM p=0.02）且 seed 間變異大——原報告表面上的優勢"
-        "主要來自未來共變數洩漏與單一測試視窗的抽樣運氣。"
-        "這與 Meese-Rogoff (1983) 以降四十年的匯率文獻一致，是誠實且可辯護的基準結論。",
-        "2. **零樣本基礎模型（Chronos-Bolt）不是免費的午餐**：點位 MASE 5.59"
-        "（差於 RW，p=0.05）——通用時序預訓練在匯率點位上沒有優勢。",
-        "3. **消融**：拿掉 instance normalization（raw level）MASE 惡化至 7.06（p<1e-13）；"
-        "理論特徵直接串進高容量神經模型（NLinear+feat 6.33）反而顯著變差——"
-        "特徵的價值需要低容量/強正則化模型（Ridge）才能萃取，"
-        "這解釋了為何許多深度模型加了總經變數卻更差。\n",
+        "以下數字由上方總表動態產生（DM 以 MASE 為損失）。\n",
+        "1. **點位誤差**：" + dm_summary_text(summary, LABELS),
+        "2. **原報告模型、零樣本模型與消融**：" + "；".join(focus_lines) + "。\n",
         *sens_tables,
         "## 超參數調校\n",
         "所有可調模型均以每個 fold 自身的驗證區間（測試前 250 天、30 天 embargo）"
@@ -222,17 +236,12 @@ def main():
         "調參不改變任何主要結論（詳見 chosen_configs.json）。\n",
         "## 挑戰 Random Walk：文獻導向的專項嘗試（rw_challenge.py）\n",
         "為回答「點位預測是否真的無法贏過 RW」，另做了一輪專項實驗，"
-        "將評估擴至 6 個年度區間（2018-03 ~ 2024-02，最密 780 個起點），"
+        "將評估擴至 6 個年度區間（2018-03 ~ 2024-02），"
         "並嘗試文獻中曾報告成功的策略（皆在驗證集選參）：\n",
         "- **Shrinkage 組合** λ·模型+(1−λ)·RW（預測組合文獻的標準工具）",
         "- **遠期溢價偏誤** pred = s+γ(F−s)，γ 可為負（Fama 1984）",
         "- **美元因子** 跨幣別共同動能（Verdelhan 2018）+ 自身 5/20/60 日動能/反轉\n",
-        "結果（rwchal_dm.csv）：最佳配置 shrunk_ridge 整段路徑 MAE 比 RW 低 0.28%"
-        "（DM p=0.27）、h=30 低 0.9%（p=0.096，邊緣）；但把起點加密到 780 個後"
-        "此邊緣顯著消失（p=0.68），顯示訊號不穩健。遠期溢價的 γ 在所有 fold "
-        "的驗證集上都選 0（退化為 RW）；美元因子與動能未提升點位。"
-        "**結論：在 30 天視野的日頻點位預測上，即使用盡文獻工具，"
-        "RW 仍無法被顯著擊敗**——這符合 Rossi (2013) 對匯率可預測性的系統性回顧。\n",
+        rwc_text,
         "## 限制與後續\n",
         "- Chronos 預訓練語料可能與部分金融序列重疊，其 zero-shot 結果僅供參考。",
         "- 本表 `dm_p` 以 MASE 為損失（尺度無關）；`mae_dm_p` 為 level MAE 合併版，"

@@ -34,7 +34,8 @@ def main():
     n_folds = 1 if args.smoke else 2
     seeds = 1 if args.smoke else args.seeds
 
-    names, dates, fx, feats = load_panel(ROOT / "nations")
+    FEAT_LAG = 1  # 特徵延後一個交易日（見 fxlib/data.py load_panel 說明）
+    names, dates, fx, feats = load_panel(ROOT / "nations", feat_lag=FEAT_LAG)
     T = fx.shape[1]
 
     all_rows = []
@@ -93,6 +94,7 @@ def main():
         "fold_spans": fold_spans, "n_nations": int(fx.shape[0]),
         "nations": names,
         "n_train_windows": int(train_w["ctx_level"].shape[0]),
+        "feat_lag": FEAT_LAG, "dm_loss": "mase",
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
 

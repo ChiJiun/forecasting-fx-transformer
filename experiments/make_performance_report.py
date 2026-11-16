@@ -11,6 +11,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fxlib.backtest import summarize
+from fxlib.reporting import dm_summary_text, feat_lag_note, pstr
 
 RESULTS = Path(__file__).parent / "results"
 DOCS = Path(__file__).parent / "docs"
@@ -52,8 +53,8 @@ def main():
     S.append("本文件完整記錄所有實驗的表現數據。評估設定：2 個年度測試區間"
              f"（{'、'.join(f'{a}~{b}' for a, b in meta['fold_spans'])}）、"
              f"每區間 {meta['n_test_origins']} 個預測起點（stride 5）× "
-             f"{meta['n_nations']} 條貨幣序列，預測 30 天路徑；"
-             "神經模型 3 seeds 平均；理論特徵與所有輸入均無未來資訊洩漏。\n")
+             f"{meta['n_nations']} 條貨幣序列，預測 30 天路徑；神經模型 3 seeds 平均。\n")
+    S.append(feat_lag_note(meta) + "\n")
 
     # ---- 1. 總表 ----
     S.append("## 1. 模型總表（20 個變體，依 MASE 排序）\n")
@@ -118,14 +119,17 @@ def main():
     # ---- 7. RW challenge ----
     rwc_p = RESULTS / "rwchal_dm.csv"
     if rwc_p.exists():
-        S.append("## 7. 「打敗 Random Walk」專項實驗（6 年度 fold、312 起點）\n")
+        S.append("## 7. 「打敗 Random Walk」專項實驗（6 個年度 fold）\n")
         rwc = pd.read_csv(rwc_p)
         S.append(rwc.round(4).to_markdown(index=False))
-        S.append("\n- `*_ratio`：該模型 MAE / RW MAE（<1 為優）；`*_p`：DM p 值\n"
-                 "- 最佳為 shrunk_ridge：整段路徑優 0.28%（p=0.27）、h=30 優 0.9%（p=0.096 邊緣）；"
-                 "起點加密至 780 個後 h=30 p 值升至 0.68，邊緣訊號不穩健\n"
-                 "- 遠期溢價 γ 在 6 個 fold 驗證集全部選 0（遠期匯率對點位無資訊）\n"
-                 "- 美元因子與動能特徵（ridge_rich）未改善點位\n")
+        b = rwc.sort_values("path_ratio").iloc[0]
+        S.append("\n- `*_ratio`：該模型 MAE / RW MAE（<1 為優）；`*_p`：DM p 值。"
+                 "**注意：本節（rw_challenge.py）的 DM 以 level MAE／level 絕對誤差為損失，"
+                 "KRW 等高價位貨幣權重大，與第 1 節的 MASE 版 dm_p 不同**\n"
+                 f"- 整段路徑 MAE 比最低的是 {b.model}：{b.path_ratio:.4f}（{pstr(b.path_p)}）、"
+                 f"h=30 為 {b.h30_ratio:.4f}（{pstr(b.h30_p)}）\n"
+                 "- 已知問題：rw_challenge.py 的 `fwd_bias` 讀取 `ctx_feat[..., 1]`（rate_diff），"
+                 "不是 fwd_premium（索引 2），本節遠期偏誤的結果尚待修正後重跑\n")
 
     # ---- 8. HF / Chronos 明細 ----
     S.append("## 8. 原報告模型與零樣本模型明細\n")
@@ -142,11 +146,8 @@ def main():
 
     # ---- 9. 結論 ----
     S.append("## 9. 表現總結\n")
-    S.append("1. **點位**：20 個變體無一顯著優於 Random Walk；最佳差距僅 0.7%（p=0.21）。"
-             "專項挑戰（shrinkage/遠期偏誤/美元因子、780 起點）亦然。\n"
-             "2. **高容量模型更差**：HF Transformer、NLinear+特徵、raw level 消融"
-             "顯著劣於 RW（p<0.05），Chronos-Bolt 邊緣（p=0.052）。\n"
-             "3. **穩健性**：上述結論跨兩個年度區間、20 組超參數、多 seed 皆成立。\n")
+    S.append("1. **點位**：" + dm_summary_text(summary, LABELS) + "\n"
+             "2. 本節數字由第 1 節總表動態產生；理論特徵的時間戳處理見文件開頭說明。\n")
 
     DOCS.mkdir(exist_ok=True)
     (DOCS / "performance_report.md").write_text("\n".join(S), encoding="utf-8")

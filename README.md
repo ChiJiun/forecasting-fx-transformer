@@ -113,6 +113,8 @@ Repo 根目錄另外保留較早期的：
 
 ## Final Results
 
+> **注意**：本節數字產生於 2026-08，當時理論特徵未延後一天（遠期匯率時間戳洩漏，見下方 Extension Experiments），DM 檢定以 level MAE 計算。目前程式已改為 `feat_lag=1`、`summarize` 的 `dm_p` 以 MASE 為損失（level MAE 版為 `mae_dm_p`），重跑後數字會不同；月頻長視野實驗見 [`experiments/docs/monthly_fundamentals_report.md`](experiments/docs/monthly_fundamentals_report.md)。
+
 ### 1. Point Forecast: no model robustly beats Random Walk
 
 跨 **11 貨幣 × 104 rolling origins**：

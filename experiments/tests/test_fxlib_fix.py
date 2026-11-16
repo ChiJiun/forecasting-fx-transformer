@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fxlib.data import load_panel, _lag_features  # noqa: E402
@@ -66,10 +67,20 @@ def test_summarize_aligns_missing_origins():
     b = df[(df.model == "model_b") & (df.origin >= 5)]
     extra = df[(df.model == "model_b") & (df.origin < 5)].assign(origin=lambda d: d.origin + 100)
     shifted = pd.concat([df[df.model == "random_walk"], b, extra], ignore_index=True)
-    got = summarize(shifted).set_index("model").loc["model_b"]
+    with pytest.warns(UserWarning):
+        got = summarize(shifted).set_index("model").loc["model_b"]
     ref = summarize(df[df.origin >= 5]).set_index("model").loc["model_b"]
     assert np.isclose(got["dm_stat"], ref["dm_stat"])
     assert np.isclose(got["mae_dm_stat"], ref["mae_dm_stat"])
+    assert got["n_dm_origins"] == 35
+
+
+def test_summarize_raises_when_too_few_common_origins():
+    df = _toy_df()
+    rw = df[df.model == "random_walk"]
+    b = df[(df.model == "model_b")].assign(origin=lambda d: d.origin + 1000)  # 完全不重疊
+    with pytest.raises(ValueError, match="共同起點"):
+        summarize(pd.concat([rw, b], ignore_index=True))
 
 
 def test_dm_identical_losses():
@@ -82,3 +93,16 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
             print("ok", name)
+
+
+def test_reporting_text_follows_summary():
+    from fxlib.reporting import dm_findings, dm_summary_text, feat_lag_note, pstr
+    s = summarize(_toy_df())
+    f = dm_findings(s, {"model_b": "B"})
+    assert f["best"][0] == "B" and f["better"] == []
+    assert len(f["worse"]) == 1 and f["worse"][0][0] == "B"  # model_b 在 MASE 上顯著較差
+    txt = dm_summary_text(s, {"model_b": "B"})
+    assert "沒有任何模型在 5% 水準顯著優於" in txt and "B（MASE 比" in txt
+    assert pstr(0.0001) == "p<0.001" and pstr(0.21) == "p=0.210"
+    assert "未延後" in feat_lag_note({}) and "未延後" in feat_lag_note({"feat_lag": 0})
+    assert "延後 1 個交易日" in feat_lag_note({"feat_lag": 1})

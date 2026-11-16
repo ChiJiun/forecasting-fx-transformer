@@ -4,9 +4,13 @@
 - MASE / sMAPE / MAE / MSE，以及 h=1,5,14,30 各視野的絕對誤差
 - Diebold-Mariano 檢定（HAC 變異數，起點重疊時仍有效；以 MASE 為損失，跨貨幣尺度無關）
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy import stats
+
+MIN_DM_ORIGINS = 10  # DM 檢定至少需要的共同起點數（太少時 HAC/HLN 不可靠）
 
 
 def metric_rows(model_name, seed, w, pred, mase_scale, names, horizons=(1, 5, 14, 30)):
@@ -90,6 +94,13 @@ def summarize(df, baseline="random_walk"):
             # 主導（約 86% 權重），僅保留為 mae_dm_* 對照。
             # 依 origin 對齊（inner join），避免模型缺少部分起點時序列錯位
             al = by_origin.join(base_by_origin, rsuffix="_rw", how="inner")
+            if len(al) < MIN_DM_ORIGINS:
+                raise ValueError(f"{model} 與 {baseline} 的共同起點只有 {len(al)} 個"
+                                 f"（至少需要 {MIN_DM_ORIGINS}），無法做 DM 檢定")
+            if len(al) < len(base_by_origin) or len(al) < len(by_origin):
+                warnings.warn(f"{model}：DM 只用 {len(al)} 個共同起點"
+                              f"（模型 {len(by_origin)}、{baseline} {len(base_by_origin)}）")
+            row["n_dm_origins"] = len(al)
             dm, p = dm_test(al["mase"].values, al["mase_rw"].values)
             row["dm_stat"], row["dm_p"] = dm, p
             mdm, mp = dm_test(al["mae"].values, al["mae_rw"].values)
@@ -97,5 +108,6 @@ def summarize(df, baseline="random_walk"):
         else:
             row["dm_stat"], row["dm_p"] = np.nan, np.nan
             row["mae_dm_stat"], row["mae_dm_p"] = np.nan, np.nan
+            row["n_dm_origins"] = len(base_by_origin)
         out.append(row)
     return pd.DataFrame(out).sort_values("mase").reset_index(drop=True)
